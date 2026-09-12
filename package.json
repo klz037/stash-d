@@ -12,7 +12,7 @@
   },
   "scripts": {
     "postinstall": "npm run build -w @stashd/shared",
-    "dev": "concurrently -n api,web -c cyan,magenta \"npm run start:dev -w @stashd/api\" \"npm run dev -w @stashd/web\"",
+    "dev": "node scripts/dev.mjs",
     "dev:api": "npm run start:dev -w @stashd/api",
     "dev:web": "npm run dev -w @stashd/web",
     "build": "npm run build -w @stashd/shared && npm run build -w @stashd/api && npm run build -w @stashd/web",
