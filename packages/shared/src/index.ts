@@ -353,13 +353,52 @@ export interface ComposePromptResponse {
   source: PromptCopySource;
 }
 
-/** Whether IFM is wired up, and how the most recent call went. */
+/** Whether IFM is wired up, how the most recent call went, and how much it is being used. */
 export interface IfmDiagnosticsDto {
   configured: boolean;
   model: string;
   lastResult: 'ok' | 'error' | null;
   lastError?: string;
   lastLatencyMs?: number;
+  /** Since the API process started. */
+  usage: {
+    /** Chat completions that returned usable output. */
+    callsOk: number;
+    callsFailed: number;
+    /** Requests answered from the compose cache instead of a call. */
+    cacheHits: number;
+    /** What the successful calls were for. */
+    jobs: { alertCopy: number; curation: number; shelfCopy: number };
+  };
+}
+
+/** Who decided a happening was worth an alert and what kind it is. */
+export type CurationSource = 'ifm' | 'rules';
+
+/** One shelf card, sent to the API so K2 can rewrite the words while keeping the facts. */
+export interface ShelfCopyItem {
+  id: string;
+  title: string;
+  body: string;
+  kind: PromptDto['kind'];
+  emotion?: PromptDto['emotion'];
+  friendName?: string;
+}
+
+export interface ShelfCopyRequest {
+  items: ShelfCopyItem[];
+}
+
+export interface ShelfCopyResult {
+  id: string;
+  title: string;
+  body: string;
+  source: PromptCopySource;
+}
+
+export interface ShelfCopyResponse {
+  items: ShelfCopyResult[];
+  ifm: IfmDiagnosticsDto;
 }
 
 export type StashAlertKind = 'athletics' | 'tradition' | 'food' | 'event' | 'news';
@@ -390,6 +429,8 @@ export interface StashAlertDto {
   deliveredPush?: boolean;
   /** Who wrote the words: IFM, or the local template because IFM is unset or failed. */
   copySource?: PromptCopySource;
+  /** Who picked and classified the happening behind this alert. */
+  curationSource?: CurationSource;
 }
 
 /** The content of a previewed alert, so "send one for real" sends exactly what was shown. */
@@ -406,6 +447,7 @@ export type AlertDraftDto = Pick<
   | 'sourceUrl'
   | 'suggestedCondition'
   | 'copySource'
+  | 'curationSource'
 >;
 
 export interface PreviewAlertsRequest {

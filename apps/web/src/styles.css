@@ -1600,3 +1600,14 @@ button {
 .ifm-status.error strong {
   color: var(--accent-deep);
 }
+
+.ifm-usage {
+  opacity: 0.85;
+}
+
+.prompt-kicker .prompt-ifm {
+  margin-left: 6px;
+  color: var(--accent-deep);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}

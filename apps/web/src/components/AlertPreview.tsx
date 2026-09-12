@@ -1,12 +1,38 @@
 import type { AlertPreviewDto, IfmDiagnosticsDto, StashAlertDto } from '@stashd/shared';
 
+/** "picked + written by IFM", "picked by IFM, template copy", … */
+function provenance(alert: StashAlertDto) {
+  const picked = alert.curationSource === 'ifm';
+  const wrote = alert.copySource === 'ifm';
+  if (picked && wrote) return 'picked + written by IFM';
+  if (picked) return 'picked by IFM, template copy';
+  if (wrote) return 'rules picked, IFM wrote';
+  return 'rules + template copy';
+}
+
+function UsageLine({ ifm }: { ifm: IfmDiagnosticsDto }) {
+  const { usage } = ifm;
+  const total = usage.callsOk + usage.callsFailed;
+  if (total === 0 && usage.cacheHits === 0) return null;
+  return (
+    <span className="ifm-usage">
+      {' '}
+      · {usage.callsOk} K2 call{usage.callsOk === 1 ? '' : 's'} since the API started (
+      {usage.jobs.alertCopy} alert words, {usage.jobs.curation} curation, {usage.jobs.shelfCopy} shelf
+      words{usage.cacheHits ? `, ${usage.cacheHits} served from cache` : ''}
+      {usage.callsFailed ? `, ${usage.callsFailed} failed` : ''})
+    </span>
+  );
+}
+
 function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
   if (!ifm.configured) {
     return (
       <p className="hint ifm-status">
-        <strong>IFM: not configured.</strong> These are template words. Set{' '}
-        <code>IFM_API_URL</code> and <code>IFM_API_KEY</code> in <code>apps/api/.env</code> and
-        restart the API to have {ifm.model} write them.
+        <strong>IFM: not configured.</strong> Headlines are sorted by rules and these are template
+        words. Set <code>IFM_API_URL</code> and <code>IFM_API_KEY</code> in{' '}
+        <code>apps/api/.env</code> and restart the API to have {ifm.model} pick the happenings and
+        write the alerts and the shelf.
       </p>
     );
   }
@@ -14,7 +40,8 @@ function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
     return (
       <p className="hint ifm-status error">
         <strong>IFM: last call failed</strong> ({ifm.lastError ?? 'unknown error'}), so these fell
-        back to template words. Model: {ifm.model}.
+        back to rules and template words. Model: {ifm.model}.
+        <UsageLine ifm={ifm} />
       </p>
     );
   }
@@ -22,7 +49,8 @@ function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
     return (
       <p className="hint ifm-status ok">
         <strong>IFM: connected.</strong> {ifm.model}
-        {ifm.lastLatencyMs ? ` · last reply in ${(ifm.lastLatencyMs / 1000).toFixed(1)}s` : ''}.
+        {ifm.lastLatencyMs ? ` · last reply in ${(ifm.lastLatencyMs / 1000).toFixed(1)}s` : ''}
+        <UsageLine ifm={ifm} />
       </p>
     );
   }
@@ -139,7 +167,7 @@ export function AlertPreview({
                     {alert.sourceLabel ? ` · ${alert.sourceLabel}` : ''}
                     {' · '}
                     <span className={`copy-source ${alert.copySource === 'ifm' ? 'ifm' : ''}`}>
-                      {alert.copySource === 'ifm' ? 'written by IFM' : 'template copy'}
+                      {provenance(alert)}
                     </span>
                   </em>
                   <div className="ios-notification-actions">

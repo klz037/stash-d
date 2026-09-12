@@ -7,7 +7,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import type { PromptCopySource, StashAlertKind } from '@stashd/shared';
+import type { CurationSource, PromptCopySource, StashAlertKind } from '@stashd/shared';
 
 const KINDS: StashAlertKind[] = ['athletics', 'tradition', 'food', 'event', 'news'];
 
@@ -68,6 +68,10 @@ export class AlertDraftBodyDto {
   @IsOptional()
   @IsIn(['ifm', 'fallback'])
   copySource?: PromptCopySource;
+
+  @IsOptional()
+  @IsIn(['ifm', 'rules'])
+  curationSource?: CurationSource;
 }
 
 export class SendAlertNowDto {

@@ -171,6 +171,137 @@ describe('PromptsService with IFM', () => {
   it('reports not configured when the env is unset', () => {
     const service = new PromptsService();
     expect(service.diagnostics()).toMatchObject({ configured: false, lastResult: null });
+    expect(service.diagnostics().usage).toEqual({
+      callsOk: 0,
+      callsFailed: 0,
+      cacheHits: 0,
+      jobs: { alertCopy: 0, curation: 0, shelfCopy: 0 },
+    });
+  });
+
+  it('curates a batch of headlines in one call and validates the verdicts', async () => {
+    const ifm = await mockIfm(() => ({
+      json: {
+        choices: [
+          {
+            message: {
+              reasoning_content: 'Item 0 is admin news [not fun].',
+              content:
+                '[{"i":0,"kind":"news","stashable":false,"score":1},' +
+                '{"i":1,"kind":"athletics","stashable":true,"score":9},' +
+                '{"i":2,"kind":"made-up","stashable":true,"score":99},' +
+                '{"i":7,"kind":"food","stashable":true,"score":5},' +
+                '{"i":1,"kind":"food","stashable":true,"score":2}]',
+            },
+          },
+        ],
+      },
+    }));
+    process.env.IFM_API_URL = ifm.url;
+    process.env.IFM_API_KEY = 'k';
+    const service = new PromptsService();
+
+    const items = [
+      { cue: 'University announces new provost', sourceLabel: 'news' },
+      { cue: 'Pitt tops Backyard Brawl', sourceLabel: 'news' },
+      { cue: 'Late-night dumpling run', sourceLabel: 'r/nyu' },
+    ];
+    const verdicts = await service.curate('University of Pittsburgh', items);
+    const again = await service.curate('University of Pittsburgh', items);
+    await ifm.close();
+
+    expect(verdicts).toEqual([
+      { index: 0, kind: 'news', stashable: false, score: 1 },
+      { index: 1, kind: 'athletics', stashable: true, score: 9 },
+      { index: 2, kind: 'news', stashable: true, score: 10 },
+    ]);
+    expect(again).toEqual(verdicts);
+    expect(ifm.requests).toHaveLength(1);
+    expect(ifm.requests[0].body.messages[1].content).toContain('0. [news] University announces new provost');
+    expect(service.diagnostics().usage).toMatchObject({
+      callsOk: 1,
+      cacheHits: 1,
+      jobs: { curation: 1 },
+    });
+  });
+
+  it('keeps the rules when K2 curates too few items or is unset', async () => {
+    const ifm = await mockIfm(() => ({
+      json: { choices: [{ message: { content: '[{"i":0,"kind":"news","stashable":true,"score":3}]' } }] },
+    }));
+    process.env.IFM_API_URL = ifm.url;
+    process.env.IFM_API_KEY = 'k';
+    const service = new PromptsService();
+    const items = [1, 2, 3, 4].map((n) => ({ cue: `headline ${n}`, sourceLabel: 'news' }));
+    expect(await service.curate('X', items)).toBeNull();
+    await ifm.close();
+
+    delete process.env.IFM_API_URL;
+    expect(await new PromptsService().curate('X', items)).toBeNull();
+  });
+
+  it('rewrites shelf cards, keeps ids, and leaves cards untouched when unset or unusable', async () => {
+    const cards = [
+      {
+        id: 'sky-wet-1',
+        kind: 'tier1' as const,
+        emotion: 'weather' as const,
+        friendName: 'Maya',
+        title: 'Rainy in Pittsburgh',
+        body: "54° and rainy on Maya. It's clear here. Take a picture of your sky and send it over.",
+      },
+      {
+        id: 'fschool-1',
+        kind: 'tier1' as const,
+        emotion: 'stress' as const,
+        friendName: 'Maya',
+        title: 'Maya: Finals in 3 days',
+        body: "University of Pittsburgh. Stash something Maya opens when it's over.",
+      },
+      {
+        id: 'ritual-1',
+        kind: 'tier0' as const,
+        emotion: 'milestone' as const,
+        title: 'Sunday dinner',
+        body: 'After Sunday dinner, stash something for Maya.',
+      },
+    ];
+
+    const unset = await new PromptsService().shelfCopy(cards);
+    expect(unset.map((c) => c.source)).toEqual(['fallback', 'fallback', 'fallback']);
+    expect(unset[0]).toMatchObject({ id: 'sky-wet-1', title: 'Rainy in Pittsburgh' });
+
+    const ifm = await mockIfm((body) => {
+      const draft: string = body.messages[1].content;
+      if (draft.includes('Sunday dinner')) {
+        return { json: { choices: [{ message: { content: 'no json for you' } }] } };
+      }
+      const title = draft.includes('Rainy') ? 'Maya is under 54° of rain' : "Three days to Maya's finals";
+      return {
+        json: {
+          choices: [{ message: { content: JSON.stringify({ title, body: `Rewritten: ${title}.` }) } }],
+        },
+      };
+    });
+    process.env.IFM_API_URL = ifm.url;
+    process.env.IFM_API_KEY = 'k';
+    const service = new PromptsService();
+
+    const out = await service.shelfCopy(cards);
+    const cached = await service.shelfCopy(cards);
+    await ifm.close();
+
+    expect(out.map((c) => c.id)).toEqual(['sky-wet-1', 'fschool-1', 'ritual-1']);
+    expect(out[0]).toMatchObject({ source: 'ifm', title: 'Maya is under 54° of rain' });
+    expect(out[1]).toMatchObject({ source: 'ifm', title: "Three days to Maya's finals" });
+    expect(out[2]).toMatchObject({ source: 'fallback', title: 'Sunday dinner' });
+    expect(cached.slice(0, 2)).toEqual(out.slice(0, 2));
+
+    const systems = ifm.requests.map((r) => r.body.messages[0].content as string);
+    expect(systems.some((s) => s.includes('weather, daylight or the time of day'))).toBe(true);
+    expect(systems.some((s) => s.includes('stressful stretch'))).toBe(true);
+    expect(systems.every((s) => s.includes('Keep every fact'))).toBe(true);
+    expect(service.diagnostics().usage.jobs.shelfCopy).toBe(2);
   });
 });
 

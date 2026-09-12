@@ -16,6 +16,8 @@ import type {
   PushSubscriptionDto,
   SendAlertNowRequest,
   SendAlertNowResponse,
+  ShelfCopyRequest,
+  ShelfCopyResponse,
   SongDto,
   SpotifyNowPlayingDto,
   SpotifyStatusDto,
@@ -174,4 +176,10 @@ export const api = {
     }),
   ackAlert: (token: string, id: string) =>
     request<void>(`/api/notifications/${id}/ack`, token, { method: 'POST' }),
+  /** K2 rewrites the shelf cards; unchanged cards come back with source 'fallback'. */
+  shelfCopy: (token: string, body: ShelfCopyRequest) =>
+    request<ShelfCopyResponse>('/api/prompts/shelf', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };

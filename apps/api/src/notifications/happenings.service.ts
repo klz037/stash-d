@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { StashAlertKind } from '@stashd/shared';
+import type { CurationSource, StashAlertKind } from '@stashd/shared';
+import { PromptsService } from '../prompts/prompts.service';
 
 type CampusSchool = {
   name: string;
@@ -18,7 +19,13 @@ export type SchoolHappening = {
   sourceLabel: string;
   sourceUrl?: string;
   emotion: 'athletics' | 'tradition' | 'food' | 'calendar' | 'soft';
+  /** Who decided this is alert-worthy and what kind it is. */
+  curatedBy: CurationSource;
+  /** 0–10 from K2 when it curated; rules give a flat 5. */
+  score: number;
 };
+
+const RULE_SCORE = 5;
 
 @Injectable()
 export class HappeningsService {
@@ -29,7 +36,7 @@ export class HappeningsService {
   >();
   private readonly schools: Record<string, CampusSchool>;
 
-  constructor() {
+  constructor(private readonly prompts: PromptsService) {
     const raw = readFileSync(
       join(__dirname, '..', 'data', 'campus-life.json'),
       'utf8',
@@ -60,8 +67,61 @@ export class HappeningsService {
 
     const seeded = this.seedHappenings(schoolId, meta);
     const merged = this.dedupe([...news, ...reddit, ...seeded]).slice(0, 12);
-    this.cache.set(schoolId, { at: Date.now(), items: merged });
-    return merged;
+    const curated = await this.curate(meta, merged);
+    this.cache.set(schoolId, { at: Date.now(), items: curated });
+    return curated;
+  }
+
+  /**
+   * Let K2 re-judge the scraped headlines: what kind each is, whether it is a
+   * good cue for a warm polaroid at all, and how strong a cue. Seeds (our own
+   * athletics calendar, traditions, food) are already curated by hand, so
+   * they only get re-scored. When IFM is off or fails, the regex verdicts stand.
+   */
+  private async curate(
+    meta: CampusSchool,
+    items: SchoolHappening[],
+  ): Promise<SchoolHappening[]> {
+    const verdicts = await this.prompts.curate(
+      meta.name,
+      items.map((item) => ({ cue: item.cue, sourceLabel: item.sourceLabel })),
+    );
+    if (!verdicts) return items;
+
+    const byIndex = new Map(verdicts.map((v) => [v.index, v]));
+    const out: SchoolHappening[] = [];
+    items.forEach((item, index) => {
+      const verdict = byIndex.get(index);
+      if (!verdict) {
+        out.push(item);
+        return;
+      }
+      const scraped = item.curatedBy === 'rules' && !this.isSeed(item);
+      if (scraped && !verdict.stashable) return;
+      const kind = scraped ? verdict.kind : item.kind;
+      out.push({
+        ...item,
+        kind,
+        emotion: this.emotionFor(kind),
+        curatedBy: 'ifm',
+        score: verdict.score,
+      });
+    });
+    return out.sort((a, b) => b.score - a.score);
+  }
+
+  private isSeed(item: SchoolHappening): boolean {
+    return /athletics calendar$|campus tradition$|food cue$/.test(item.sourceLabel);
+  }
+
+  private emotionFor(kind: StashAlertKind): SchoolHappening['emotion'] {
+    return kind === 'athletics'
+      ? 'athletics'
+      : kind === 'food'
+        ? 'food'
+        : kind === 'tradition'
+          ? 'tradition'
+          : 'calendar';
   }
 
   private seedHappenings(
@@ -84,6 +144,8 @@ export class HappeningsService {
         emotion: 'athletics',
         cue: `${event.label} (${when})`,
         sourceLabel: `${meta.name} athletics calendar`,
+        curatedBy: 'rules',
+        score: RULE_SCORE,
       });
     }
 
@@ -99,12 +161,16 @@ export class HappeningsService {
       emotion: 'tradition',
       cue: trad,
       sourceLabel: `${meta.name} campus tradition`,
+      curatedBy: 'rules',
+      score: RULE_SCORE,
     });
     out.push({
       kind: 'food',
       emotion: 'food',
       cue: food,
       sourceLabel: `${meta.name} food cue`,
+      curatedBy: 'rules',
+      score: RULE_SCORE,
     });
     return out;
   }
@@ -164,19 +230,14 @@ export class HappeningsService {
         const kind = this.classify(title);
         out.push({
           kind,
-          emotion:
-            kind === 'athletics'
-              ? 'athletics'
-              : kind === 'food'
-                ? 'food'
-                : kind === 'tradition'
-                  ? 'tradition'
-                  : 'calendar',
+          emotion: this.emotionFor(kind),
           cue: title.slice(0, 140),
           sourceLabel: `r/${meta.reddit}`,
           sourceUrl: post.url?.startsWith('http')
             ? post.url
             : `https://www.reddit.com${post.permalink ?? ''}`,
+          curatedBy: 'rules',
+          score: RULE_SCORE,
         });
       }
       return out.slice(0, 5);
@@ -204,17 +265,12 @@ export class HappeningsService {
       const kind = this.classify(cleaned);
       items.push({
         kind,
-        emotion:
-          kind === 'athletics'
-            ? 'athletics'
-            : kind === 'food'
-              ? 'food'
-              : kind === 'tradition'
-                ? 'tradition'
-                : 'calendar',
+        emotion: this.emotionFor(kind),
         cue: cleaned,
         sourceLabel: `${schoolName} news`,
         sourceUrl: link || undefined,
+        curatedBy: 'rules',
+        score: RULE_SCORE,
       });
     }
     return items;

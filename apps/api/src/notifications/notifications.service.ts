@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import type {
   AlertDraftDto,
   AlertPreviewDto,
+  CurationSource,
   NotificationsStatusDto,
   PromptCopySource,
   PushSubscriptionDto,
@@ -206,6 +207,7 @@ export class NotificationsService {
         sourceUrl: built.sourceUrl,
         suggestedCondition: built.suggestedCondition,
         copySource: built.copySource,
+        curationSource: built.curationSource,
         createdAt: now.toISOString(),
       });
     }
@@ -320,6 +322,7 @@ export class NotificationsService {
           sourceUrl: built.sourceUrl,
           suggestedCondition: built.suggestedCondition,
           copySource: built.copySource,
+          curationSource: built.curationSource,
         }),
       };
     }
@@ -346,6 +349,7 @@ export class NotificationsService {
       sourceUrl: draft.sourceUrl,
       suggestedCondition: draft.suggestedCondition,
       copySource: draft.copySource,
+      curationSource: draft.curationSource,
       deliveredPush: false,
       acknowledged: false,
     });
@@ -387,6 +391,7 @@ export class NotificationsService {
         schoolName: string;
         suggestedCondition: string;
         copySource: PromptCopySource;
+        curationSource: CurationSource;
       })
     | null
   > {
@@ -413,6 +418,7 @@ export class NotificationsService {
       schoolName: meta.name,
       suggestedCondition: this.conditionFor(pick),
       copySource: composed.source,
+      curationSource: pick.curatedBy,
     };
   }
 
@@ -447,9 +453,13 @@ export class NotificationsService {
     const start = hash % order.length;
     for (let i = 0; i < order.length; i += 1) {
       const kind = order[(start + i) % order.length];
+      // Items arrive best-first (K2's score when it curated), so vary among the
+      // top few rather than the whole list: a reshuffle changes the cue without
+      // dropping to the weakest one.
       const matches = fresh.filter((item) => item.kind === kind);
-      // Vary which item of the kind we pick too, so a reshuffle changes the cue, not just the kind.
-      if (matches.length > 0) return matches[Math.floor(hash / 7) % matches.length];
+      if (matches.length > 0) {
+        return matches[Math.floor(hash / 7) % Math.min(3, matches.length)];
+      }
     }
     return fresh[hash % fresh.length];
   }
@@ -530,6 +540,7 @@ export class NotificationsService {
       createdAt: (createdAt ?? new Date()).toISOString(),
       deliveredPush: Boolean(doc.deliveredPush),
       copySource: doc.copySource,
+      curationSource: doc.curationSource,
     };
   }
 }

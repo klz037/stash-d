@@ -3,22 +3,45 @@ import type {
   ComposePromptRequest,
   ComposePromptResponse,
   IfmDiagnosticsDto,
+  ShelfCopyItem,
+  ShelfCopyResult,
+  StashAlertKind,
 } from '@stashd/shared';
 
 const DEFAULT_MODEL = 'IFM/K2-Horizon-7B';
 /** Same cue + school + recipient within this window reuses the composed copy. */
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const CACHE_MAX = 500;
+const CACHE_MAX = 1000;
+const SHELF_CONCURRENCY = 4;
 
-type CacheEntry = { at: number; value: ComposePromptResponse };
+const ALERT_KINDS: StashAlertKind[] = ['athletics', 'tradition', 'food', 'event', 'news'];
+
+type Job = keyof IfmDiagnosticsDto['usage']['jobs'];
+type CacheEntry<T> = { at: number; value: T };
+
+/** What K2 decides about one scraped headline. */
+export type CurationVerdict = {
+  index: number;
+  kind: StashAlertKind;
+  /** False for controversy, tragedy, admin noise — anything that is the wrong cue for a warm polaroid. */
+  stashable: boolean;
+  /** 0–10: how much a friend would enjoy getting a stash about this. */
+  score: number;
+};
 
 @Injectable()
 export class PromptsService {
   private readonly logger = new Logger(PromptsService.name);
-  private readonly cache = new Map<string, CacheEntry>();
+  private readonly cache = new Map<string, CacheEntry<unknown>>();
   private lastResult: IfmDiagnosticsDto['lastResult'] = null;
   private lastError: string | undefined;
   private lastLatencyMs: number | undefined;
+  private readonly usage: IfmDiagnosticsDto['usage'] = {
+    callsOk: 0,
+    callsFailed: 0,
+    cacheHits: 0,
+    jobs: { alertCopy: 0, curation: 0, shelfCopy: 0 },
+  };
 
   get configured(): boolean {
     return Boolean(this.baseUrl() && process.env.IFM_API_KEY);
@@ -31,8 +54,16 @@ export class PromptsService {
       lastResult: this.lastResult,
       lastError: this.lastError,
       lastLatencyMs: this.lastLatencyMs,
+      usage: {
+        ...this.usage,
+        jobs: { ...this.usage.jobs },
+      },
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Job 1: the words of a device alert
+  // ---------------------------------------------------------------------------
 
   async compose(input: ComposePromptRequest): Promise<ComposePromptResponse> {
     const fallback = this.fallback(input);
@@ -40,47 +71,10 @@ export class PromptsService {
       return { ...fallback, source: 'fallback' };
     }
 
-    const key = this.cacheKey(input);
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
-      return cached.value;
-    }
+    const key = ['alert', input.schoolId, input.emotion, input.recipientName ?? '', input.cue].join('|');
+    const cached = this.fromCache<ComposePromptResponse>(key);
+    if (cached) return cached;
 
-    const started = Date.now();
-    try {
-      const composed = await this.callIfm(input);
-      this.lastLatencyMs = Date.now() - started;
-      if (!composed) {
-        this.record('error', 'IFM answered but returned no usable JSON');
-        return { ...fallback, source: 'fallback' };
-      }
-      this.record('ok');
-      const value: ComposePromptResponse = {
-        title: this.clip(composed.title || fallback.title, 48),
-        body: this.clip(composed.body || fallback.body, 140),
-        cta: this.clip(composed.cta || fallback.cta, 28),
-        source: 'ifm',
-      };
-      this.remember(key, value);
-      return value;
-    } catch (err) {
-      this.lastLatencyMs = Date.now() - started;
-      const message = err instanceof Error ? err.message : 'unknown error';
-      this.record('error', message);
-      this.logger.warn(`IFM compose error: ${message}`);
-      return { ...fallback, source: 'fallback' };
-    }
-  }
-
-  /**
-   * One chat completion against an OpenAI-compatible K2 Horizon endpoint.
-   * K2 Horizon is a reasoning model: thinking arrives in `reasoning_content`
-   * and the answer in `content`, so we ask for low reasoning effort, leave
-   * plenty of room for tokens, and accept JSON from either field.
-   */
-  private async callIfm(
-    input: ComposePromptRequest,
-  ): Promise<{ title?: string; body?: string; cta?: string } | null> {
     const system = [
       "You write short stash prompts for a sealed polaroid app called stash'd.",
       'Respond with ONLY a JSON object: {"title":"...","body":"...","cta":"..."}.',
@@ -92,60 +86,263 @@ export class PromptsService {
         : 'The stash is for a friend at that school.',
     ].join(' ');
 
-    const res = await fetch(`${this.baseUrl()}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.IFM_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: this.model(),
-        temperature: 1.0,
-        top_p: 0.95,
-        max_tokens: 2048,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: `Write a prompt about: ${input.cue}` },
-        ],
-        chat_template_kwargs: { reasoning_effort: 'low' },
-      }),
-      signal: AbortSignal.timeout(this.timeoutMs()),
-    });
-
-    if (!res.ok) {
-      const detail = (await res.text().catch(() => '')).slice(0, 200);
-      throw new Error(`IFM ${res.status}${detail ? `: ${detail}` : ''}`);
-    }
-
-    const data = (await res.json()) as {
-      choices?: Array<{
-        message?: { content?: string | null; reasoning_content?: string | null };
-        finish_reason?: string;
-      }>;
-    };
-    const message = data.choices?.[0]?.message;
-    const answer = this.stripThinking(message?.content ?? '');
-    return (
-      this.parseJson(answer) ??
-      this.parseJson(message?.reasoning_content ?? '')
+    const parsed = await this.ask<{ title?: unknown; body?: unknown; cta?: unknown }>(
+      'alertCopy',
+      system,
+      `Write a prompt about: ${input.cue}`,
+      (raw) => this.parseObject(raw),
     );
+    if (!parsed) return { ...fallback, source: 'fallback' };
+
+    const value: ComposePromptResponse = {
+      title: this.clip(this.str(parsed.title) || fallback.title, 48),
+      body: this.clip(this.str(parsed.body) || fallback.body, 140),
+      cta: this.clip(this.str(parsed.cta) || fallback.cta, 28),
+      source: 'ifm',
+    };
+    this.remember(key, value);
+    return value;
   }
 
-  private record(result: 'ok' | 'error', error?: string) {
+  // ---------------------------------------------------------------------------
+  // Job 2: deciding which campus happenings deserve an alert at all
+  // ---------------------------------------------------------------------------
+
+  /**
+   * One call per school batch. K2 classifies each headline, drops the ones
+   * that would make a bad cue for a warm polaroid, and scores the rest.
+   * Returns null when IFM is unset or the call failed, so callers keep their
+   * rule-based verdicts.
+   */
+  async curate(
+    schoolName: string,
+    items: Array<{ cue: string; sourceLabel: string }>,
+  ): Promise<CurationVerdict[] | null> {
+    if (!this.configured || items.length === 0) return null;
+
+    const key = ['curate', schoolName, ...items.map((i) => i.cue)].join('|');
+    const cached = this.fromCache<CurationVerdict[]>(key);
+    if (cached) return cached;
+
+    const system = [
+      "You curate campus happenings for stash'd, an app where friends leave each other sealed polaroids.",
+      `Campus: ${schoolName}.`,
+      'For each numbered item decide: kind (one of athletics, tradition, food, event, news),',
+      'stashable (true only if a friend would enjoy being nudged to send a warm photo about it;',
+      'false for controversy, tragedy, crime, layoffs, lawsuits, politics, admin notices, ads),',
+      'and score 0-10 for how fun and specific a stash cue it makes (games, traditions, food, campus life score high; generic press releases score low).',
+      'Respond with ONLY a JSON array of objects: [{"i":0,"kind":"athletics","stashable":true,"score":8}, ...]. Include every item exactly once.',
+    ].join(' ');
+    const user = items
+      .map((item, i) => `${i}. [${item.sourceLabel}] ${item.cue.replace(/\s+/g, ' ').slice(0, 160)}`)
+      .join('\n');
+
+    const parsed = await this.ask<unknown[]>('curation', system, user, (raw) =>
+      this.parseArray(raw),
+    );
+    if (!parsed) return null;
+
+    const verdicts: CurationVerdict[] = [];
+    const seen = new Set<number>();
+    for (const row of parsed) {
+      if (!row || typeof row !== 'object') continue;
+      const r = row as { i?: unknown; kind?: unknown; stashable?: unknown; score?: unknown };
+      const index = typeof r.i === 'number' ? r.i : Number(r.i);
+      if (!Number.isInteger(index) || index < 0 || index >= items.length || seen.has(index)) continue;
+      seen.add(index);
+      const kind = ALERT_KINDS.includes(r.kind as StashAlertKind)
+        ? (r.kind as StashAlertKind)
+        : 'news';
+      const score = Math.max(0, Math.min(10, Number(r.score) || 0));
+      verdicts.push({ index, kind, stashable: r.stashable !== false, score });
+    }
+    // Anything K2 skipped keeps flowing through the rules path rather than vanishing.
+    if (verdicts.length < Math.ceil(items.length / 2)) {
+      this.logger.warn(`IFM curated only ${verdicts.length}/${items.length} items for ${schoolName}; keeping rules`);
+      return null;
+    }
+    this.remember(key, verdicts);
+    return verdicts;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Job 3: the words of the shelf cards (timing, weather, calendars)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Rewrites shelf cards in K2's voice while keeping every fact the client
+   * worked out (times, temperatures, cities, names). Cards K2 can't improve
+   * come back untouched with `source: 'fallback'`.
+   */
+  async shelfCopy(items: ShelfCopyItem[]): Promise<ShelfCopyResult[]> {
+    const untouched = (item: ShelfCopyItem): ShelfCopyResult => ({
+      id: item.id,
+      title: item.title,
+      body: item.body,
+      source: 'fallback',
+    });
+    if (!this.configured || items.length === 0) return items.map(untouched);
+
+    const results: ShelfCopyResult[] = new Array(items.length);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < items.length) {
+        const i = cursor++;
+        results[i] = await this.rewriteShelfItem(items[i]).catch(() => untouched(items[i]));
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(SHELF_CONCURRENCY, items.length) }, () => worker()),
+    );
+    return results;
+  }
+
+  private async rewriteShelfItem(item: ShelfCopyItem): Promise<ShelfCopyResult> {
+    const key = ['shelf', item.kind, item.emotion ?? '', item.friendName ?? '', item.title, item.body].join('|');
+    const cached = this.fromCache<ShelfCopyResult>(key);
+    if (cached) return { ...cached, id: item.id };
+
+    const angle =
+      item.emotion === 'weather'
+        ? 'This card is about weather, daylight or the time of day where a friend is.'
+        : item.emotion === 'stress'
+          ? 'This card is about a stressful stretch on a campus calendar (exams, deadlines).'
+          : item.emotion === 'lull'
+            ? 'This card is about a quiet stretch on a campus calendar (a break, a slow week).'
+            : item.emotion === 'milestone'
+              ? 'This card is about a dated moment: a game, a calendar event, a ritual.'
+              : item.emotion === 'waiting' || item.emotion === 'reciprocity'
+                ? 'This card is about the rhythm between two friends (who sent last, what is still sealed).'
+                : 'This card is a small reason to send a friend a sealed polaroid.';
+
+    const system = [
+      "You rewrite short shelf cards for stash'd, an app where friends leave each other sealed polaroids that open later.",
+      angle,
+      'Keep every fact from the draft exactly: names, cities, temperatures, times, day counts, event names. Do not invent new facts.',
+      'Make it warmer and more specific, in plain spoken English. title: max 7 words. body: one or two sentences, max 120 characters.',
+      'No hashtags, no emojis, no markdown, no exclamation marks in the title.',
+      'Respond with ONLY a JSON object: {"title":"...","body":"..."}.',
+    ].join(' ');
+    const user = `Draft title: ${item.title}\nDraft body: ${item.body}${
+      item.friendName ? `\nFriend: ${item.friendName}` : ''
+    }`;
+
+    const parsed = await this.ask<{ title?: unknown; body?: unknown }>(
+      'shelfCopy',
+      system,
+      user,
+      (raw) => this.parseObject(raw),
+    );
+    const title = this.str(parsed?.title);
+    const body = this.str(parsed?.body);
+    if (!parsed || !title || !body) {
+      return { id: item.id, title: item.title, body: item.body, source: 'fallback' };
+    }
+    const value: ShelfCopyResult = {
+      id: item.id,
+      title: this.clip(title, 60),
+      body: this.clip(body, 150),
+      source: 'ifm',
+    };
+    this.remember(key, value);
+    return value;
+  }
+
+  // ---------------------------------------------------------------------------
+  // The one place that talks to K2
+  // ---------------------------------------------------------------------------
+
+  /**
+   * One chat completion against an OpenAI-compatible K2 Horizon endpoint.
+   * K2 Horizon is a reasoning model: thinking arrives in `reasoning_content`
+   * and the answer in `content`, so we ask for low reasoning effort, leave
+   * plenty of room for tokens, and accept JSON from either field.
+   */
+  private async ask<T>(
+    job: Job,
+    system: string,
+    user: string,
+    parse: (raw: string) => T | null,
+  ): Promise<T | null> {
+    const started = Date.now();
+    try {
+      const res = await fetch(`${this.baseUrl()}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.IFM_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model(),
+          temperature: 1.0,
+          top_p: 0.95,
+          max_tokens: 2048,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          chat_template_kwargs: { reasoning_effort: 'low' },
+        }),
+        signal: AbortSignal.timeout(this.timeoutMs()),
+      });
+      this.lastLatencyMs = Date.now() - started;
+
+      if (!res.ok) {
+        const detail = (await res.text().catch(() => '')).slice(0, 200);
+        throw new Error(`IFM ${res.status}${detail ? `: ${detail}` : ''}`);
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: { content?: string | null; reasoning_content?: string | null };
+        }>;
+      };
+      const message = data.choices?.[0]?.message;
+      const answer = this.stripThinking(message?.content ?? '');
+      const parsed = parse(answer) ?? parse(message?.reasoning_content ?? '');
+      if (parsed === null) {
+        this.record('error', 'IFM answered but returned no usable JSON');
+        return null;
+      }
+      this.record('ok', undefined, job);
+      return parsed;
+    } catch (err) {
+      this.lastLatencyMs = Date.now() - started;
+      const message = err instanceof Error ? err.message : 'unknown error';
+      this.record('error', message);
+      this.logger.warn(`IFM ${job} error: ${message}`);
+      return null;
+    }
+  }
+
+  private record(result: 'ok' | 'error', error?: string, job?: Job) {
     this.lastResult = result;
     this.lastError = error;
+    if (result === 'ok') {
+      this.usage.callsOk += 1;
+      if (job) this.usage.jobs[job] += 1;
+    } else {
+      this.usage.callsFailed += 1;
+    }
   }
 
-  private remember(key: string, value: ComposePromptResponse) {
+  private fromCache<T>(key: string): T | null {
+    const hit = this.cache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.at >= CACHE_TTL_MS) {
+      this.cache.delete(key);
+      return null;
+    }
+    this.usage.cacheHits += 1;
+    return hit.value as T;
+  }
+
+  private remember(key: string, value: unknown) {
     if (this.cache.size >= CACHE_MAX) {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) this.cache.delete(oldest);
     }
     this.cache.set(key, { at: Date.now(), value });
-  }
-
-  private cacheKey(input: ComposePromptRequest): string {
-    return [input.schoolId, input.emotion, input.recipientName ?? '', input.cue].join('|');
   }
 
   private baseUrl(): string | undefined {
@@ -218,37 +415,47 @@ export class PromptsService {
     return templates[input.emotion] ?? templates.soft;
   }
 
-  private parseJson(
-    raw: string,
-  ): { title?: string; body?: string; cta?: string } | null {
-    // Take the last {...} block so a stray brace in the reasoning doesn't win.
-    const end = raw.lastIndexOf('}');
-    if (end < 0) return null;
-    let depth = 0;
-    let start = -1;
-    for (let i = end; i >= 0; i -= 1) {
-      if (raw[i] === '}') depth += 1;
-      if (raw[i] === '{') {
-        depth -= 1;
-        if (depth === 0) {
-          start = i;
-          break;
-        }
-      }
-    }
-    if (start < 0) return null;
+  /** The last balanced {...} block, so a stray brace in the reasoning doesn't win. */
+  private parseObject(raw: string): Record<string, unknown> | null {
+    const slice = this.lastBalanced(raw, '{', '}');
+    if (!slice) return null;
     try {
-      const parsed = JSON.parse(raw.slice(start, end + 1)) as {
-        title?: unknown;
-        body?: unknown;
-        cta?: unknown;
-      };
-      const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
-      const out = { title: str(parsed.title), body: str(parsed.body), cta: str(parsed.cta) };
-      return out.title || out.body ? out : null;
+      const parsed = JSON.parse(slice) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      const obj = parsed as Record<string, unknown>;
+      return Object.keys(obj).length > 0 ? obj : null;
     } catch {
       return null;
     }
+  }
+
+  private parseArray(raw: string): unknown[] | null {
+    const slice = this.lastBalanced(raw, '[', ']');
+    if (!slice) return null;
+    try {
+      const parsed = JSON.parse(slice) as unknown;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private lastBalanced(raw: string, open: string, close: string): string | null {
+    const end = raw.lastIndexOf(close);
+    if (end < 0) return null;
+    let depth = 0;
+    for (let i = end; i >= 0; i -= 1) {
+      if (raw[i] === close) depth += 1;
+      if (raw[i] === open) {
+        depth -= 1;
+        if (depth === 0) return raw.slice(i, end + 1);
+      }
+    }
+    return null;
+  }
+
+  private str(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value : undefined;
   }
 
   private clip(value: string, max: number): string {
