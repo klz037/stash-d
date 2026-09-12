@@ -1381,7 +1381,6 @@ button {
   50% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 6px rgba(224, 138, 44, 0.22); }
 }
 
-<<<<<<< HEAD
 /* Dismiss an alert from its corner. */
 .alert-card {
   position: relative;
@@ -1402,7 +1401,8 @@ button {
   padding: 0 0 2px;
   display: grid;
   place-items: center;
-=======
+}
+
 /* Stash alerts row in profile */
 .alerts-row {
   flex-direction: row;
@@ -1481,12 +1481,15 @@ button {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
 }
 
+/* Named apart from the polaroid's `pulse`: two @keyframes with one name means
+   the later definition silently wins for both, which killed the ember ring
+   on an urgent card. */
 .ios-notification.skeleton {
   min-height: 84px;
-  animation: pulse 1.2s ease-in-out infinite;
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes pulse {
+@keyframes skeleton-pulse {
   0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
 }
@@ -1561,5 +1564,4 @@ button {
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 6px;
->>>>>>> 1c812bfc03da4303e430e032a9d670f554c9de94
 }
