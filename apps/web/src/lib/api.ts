@@ -12,9 +12,11 @@ import type {
   LockContext,
   LockDto,
   NotificationsStatusDto,
+  PreviewAlertsRequest,
   PushSubscriptionDto,
+  SendAlertNowRequest,
+  SendAlertNowResponse,
   SongDto,
-  StashAlertDto,
   SpotifyNowPlayingDto,
   SpotifyStatusDto,
   UpdateProfileRequest,
@@ -160,11 +162,15 @@ export const api = {
       token,
       { method: 'DELETE' },
     ),
-  previewAlerts: (token: string) =>
-    request<AlertPreviewDto>('/api/notifications/preview', token, { method: 'POST' }),
-  sendAlertNow: (token: string) =>
-    request<StashAlertDto | null>('/api/notifications/send-now', token, {
+  previewAlerts: (token: string, body: PreviewAlertsRequest = {}) =>
+    request<AlertPreviewDto>('/api/notifications/preview', token, {
       method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  sendAlertNow: (token: string, body: SendAlertNowRequest = {}) =>
+    request<SendAlertNowResponse>('/api/notifications/send-now', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   ackAlert: (token: string, id: string) =>
     request<void>(`/api/notifications/${id}/ack`, token, { method: 'POST' }),
