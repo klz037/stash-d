@@ -68,45 +68,64 @@ export class StashesService {
     }
 
     const docs = await this.lockModel.insertMany(
-      recipientIds.map((recipientId) => ({
-        senderId: actor._id,
-        recipientId,
-        text: dto.text ?? '',
-        imageUrl: dto.imageUrl,
-        conditionType: dto.conditionType,
-        conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-        state: 'LOCKED' as const,
-        senderConfirmed: false,
-        recipientConfirmed: false,
-        unlockedAt: null,
-        groupId,
-        groupName,
-      })),
+      recipientIds.map((recipientId) => {
+        const song = dto.songTrackId
+          ? (() => {
+              // Never trust client-supplied song metadata — re-resolve from the id
+              // so the stored album art URL is always one Spotify actually gave us.
+              return this.spotifyService.resolveTrack(actor, dto.songTrackId as string);
+            })()
+          : Promise.resolve(null);
+
+        return {
+          senderId: actor._id,
+          recipientId,
+          text: dto.text ?? '',
+          imageUrl: dto.imageUrl,
+          song: null,
+          mediaKind: dto.imageUrl ? 'PHOTO' : 'TEXT',
+          conditionType: dto.conditionType,
+          conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
+          state: 'LOCKED' as const,
+          senderConfirmed: false,
+          recipientConfirmed: false,
+          unlockedAt: null,
+          groupId,
+          groupName,
+        };
+      }),
     );
-    return docs as unknown as LockDocument[];
-    // Never trust client-supplied song metadata — re-resolve from the id so the
-    // stored album art URL is always one Spotify actually gave us.
-    let song: LockSong | null = null;
-    if (dto.songTrackId) {
-      song = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
-    }
 
-    const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
+    const resolved = await Promise.all(
+      recipientIds.map(async (recipientId) => {
+        let song: LockSong | null = null;
+        if (dto.songTrackId) {
+          song = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
+        }
 
-    return this.lockModel.create({
-      senderId: actor._id,
-      recipientId,
-      text: dto.text ?? '',
-      imageUrl: dto.imageUrl,
-      song,
-      mediaKind,
-      conditionType: dto.conditionType,
-      conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-      state: 'LOCKED',
-      senderConfirmed: false,
-      recipientConfirmed: false,
-      unlockedAt: null,
-    });
+        const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
+
+        return {
+          senderId: actor._id,
+          recipientId,
+          text: dto.text ?? '',
+          imageUrl: dto.imageUrl,
+          song,
+          mediaKind,
+          conditionType: dto.conditionType,
+          conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
+          state: 'LOCKED' as const,
+          senderConfirmed: false,
+          recipientConfirmed: false,
+          unlockedAt: null,
+          groupId,
+          groupName,
+        };
+      }),
+    );
+
+    const created = await this.lockModel.create(resolved);
+    return created as unknown as LockDocument[];
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
