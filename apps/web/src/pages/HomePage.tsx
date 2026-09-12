@@ -13,6 +13,7 @@ import {
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CaptureSheet, Person } from '../components/CaptureSheet';
+import { Icon } from '../components/Icon';
 import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
@@ -534,9 +535,7 @@ export function HomePage() {
     <>
       <ToastStack toasts={toasts} />
       <div className="topbar">
-        <span className="wordmark">
-          stash<span>'d</span>
-        </span>
+        <Icon name="stashd-logo" width={110} title="stash'd" />
         <div className="topbar-actions">
           <button
             className={`icon-btn ${menu === 'more' ? 'active' : ''}`}
@@ -552,7 +551,11 @@ export function HomePage() {
             aria-label="Profile"
             onClick={() => openMenu('profile')}
           >
-            {me?.picture ? <img src={me.picture} alt="" /> : initial(me?.displayName ?? '?')}
+            {me?.picture ? (
+              <img src={me.picture} alt="" />
+            ) : (
+              <Icon name="profile-icon" width={32} />
+            )}
           </button>
         </div>
       </div>
@@ -941,7 +944,12 @@ export function HomePage() {
 
           {empty ? (
             <div className="empty">
-              <h2>Nothing's waiting for you yet.</h2>
+              <Icon
+                name="empty-clothesline"
+                width={260}
+                className="empty-illustration"
+              />
+              <p className="empty-line">nothing on the line yet.</p>
               {me ? (
                 <div className="code-block">
                   <div>Your code</div>
@@ -1008,7 +1016,9 @@ export function HomePage() {
             setReplyTo(undefined);
             setCapturing(true);
           }}
-        />
+        >
+          <Icon name="stash-button" width={28} />
+        </button>
       </div>
 
       {capturing ? (

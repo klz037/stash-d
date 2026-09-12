@@ -9,6 +9,7 @@ import {
   MAX_RECIPIENTS,
   SongDto,
 } from '@stashd/shared';
+import { Icon } from './Icon';
 import { SongPicker } from './SongPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Campus } from '../lib/prompts';
@@ -389,13 +390,15 @@ export function CaptureSheet({
                 Share a song
               </button>
               <button
-                className="btn-ghost"
+                className="btn-ghost note-btn"
                 type="button"
                 onClick={() => {
                   stopCamera();
                   setStep('text');
                 }}
               >
+                {/* Stand-in: the voicenote drawing until the note icon lands. */}
+                <Icon name="voicenote-icon" width={36} />
                 Skip photo
               </button>
             </div>

@@ -8,9 +8,42 @@
   --accent-deep: #8f2f18;
   --polaroid: #fffdf8;
   --shadow: 0 18px 40px rgba(70, 42, 20, 0.16);
+
+  /* The drawn icon set. Every icon file fills with `currentColor`, so these two
+     are the whole ink/bone story — no second file, no second copy. */
+  --icon-ink: #1e2433;
+  --icon-bone: #f2ede3;
+  /* Muted caption grey. Aliased to the app's existing soft ink so icon captions
+     match the rest of the type. */
+  --ash: var(--ink-soft);
+
   color: var(--ink);
   font-family: Sora, system-ui, sans-serif;
   background: var(--paper);
+}
+
+/* Handwriting for anything that should read as the sender's own hand. */
+@font-face {
+  font-family: 'Biro Script';
+  src: url('/fonts/Biro_Script_reduced.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Inline drawn icon. Width is set by the caller; height always comes from the
+   viewBox so nothing is ever squashed. */
+.icon {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  color: var(--icon-ink);
+}
+
+.icon > svg {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 * {
@@ -127,6 +160,21 @@ button {
 .empty h2 {
   font-size: 1.35rem;
   margin: 0 0 8px;
+}
+
+/* The clothesline is an illustration, not an icon: it stays at its drawn width
+   and is allowed to overflow a narrow phone rather than shrink into mush. */
+.empty-illustration {
+  display: block;
+  margin: 4px auto 0;
+  opacity: 0.5;
+}
+
+.empty-line {
+  margin: 10px 0 4px;
+  text-align: center;
+  color: var(--ash);
+  font-size: 14px;
 }
 
 .code-block {
@@ -292,12 +340,17 @@ button {
   color: rgba(243, 234, 216, 0.75);
 }
 
+/* Written on the undeveloped print, in the sender's hand. Biro needs a little
+   more size and a little less tracking than the sans it replaces. */
 .undeveloped-hint {
-  font-size: 0.66rem;
-  letter-spacing: 0.06em;
+  font-family: 'Biro Script', Caveat, cursive;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
   text-transform: lowercase;
   text-align: center;
-  padding: 0 24px;
+  padding: 0 20px;
+  transform: rotate(-1.2deg);
 }
 
 .polaroid.here .undeveloped-hint {
@@ -319,7 +372,7 @@ button {
 }
 
 .condition {
-  font-family: Caveat, cursive;
+  font-family: 'Biro Script', Caveat, cursive;
   font-size: 1.2rem;
   line-height: 1.1;
   overflow-wrap: anywhere;
@@ -385,6 +438,8 @@ button {
   border: 6px solid #fffdf8;
   background: var(--accent);
   box-shadow: 0 10px 24px rgba(194, 74, 42, 0.35);
+  display: grid;
+  place-items: center;
 }
 
 .sheet {
@@ -529,6 +584,18 @@ button {
 .camera-actions .btn-ghost {
   padding: 11px 10px;
   font-size: 0.9rem;
+}
+
+/* The note button carries its icon above the label. The icon is deliberately
+   larger than anything else in this row — it is not sized to match. */
+.camera-actions .note-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding-top: 8px;
+  padding-bottom: 8px;
 }
 
 /* Close lives at the bottom of the sheet, under whatever step is showing. */
@@ -853,6 +920,12 @@ button {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* The drawn profile icon, standing in when there's no photo. `.avatar` is
+   filled with var(--ink), a dark surface, so the icon goes bone. */
+.avatar .icon {
+  color: var(--icon-bone);
 }
 
 .avatar.small {
