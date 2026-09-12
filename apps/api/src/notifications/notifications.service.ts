@@ -167,6 +167,8 @@ export class NotificationsService {
     const now = new Date();
     const day = dayStamp(now);
     const salt = seed ? `${day}:${seed}` : day;
+    // The preview doubles as the IFM check-up, so make sure the model list is fresh.
+    await this.promptsService.listModels();
     const [friends, groups, sentToday] = await Promise.all([
       this.friendshipsService.listFriends(user),
       this.groupsService.list(user),
