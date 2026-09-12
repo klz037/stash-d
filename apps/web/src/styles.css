@@ -1576,3 +1576,27 @@ button {
   gap: 8px;
   margin-top: 6px;
 }
+
+.ios-notification .copy-source {
+  opacity: 0.9;
+}
+
+.ios-notification .copy-source.ifm {
+  color: #ffd9a8;
+  font-weight: 600;
+}
+
+.ifm-status code {
+  font-size: 0.75rem;
+  background: rgba(28, 22, 18, 0.06);
+  padding: 1px 5px;
+  border-radius: 6px;
+}
+
+.ifm-status.ok strong {
+  color: #2f7a4b;
+}
+
+.ifm-status.error strong {
+  color: var(--accent-deep);
+}

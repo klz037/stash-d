@@ -344,11 +344,22 @@ export interface ComposePromptRequest {
   recipientName?: string;
 }
 
+export type PromptCopySource = 'ifm' | 'fallback';
+
 export interface ComposePromptResponse {
   title: string;
   body: string;
   cta: string;
-  source: 'ifm' | 'fallback';
+  source: PromptCopySource;
+}
+
+/** Whether IFM is wired up, and how the most recent call went. */
+export interface IfmDiagnosticsDto {
+  configured: boolean;
+  model: string;
+  lastResult: 'ok' | 'error' | null;
+  lastError?: string;
+  lastLatencyMs?: number;
 }
 
 export type StashAlertKind = 'athletics' | 'tradition' | 'food' | 'event' | 'news';
@@ -377,6 +388,8 @@ export interface StashAlertDto {
   createdAt: string;
   /** True when at least one of the user's devices accepted the Web Push. */
   deliveredPush?: boolean;
+  /** Who wrote the words: IFM, or the local template because IFM is unset or failed. */
+  copySource?: PromptCopySource;
 }
 
 /** The content of a previewed alert, so "send one for real" sends exactly what was shown. */
@@ -392,6 +405,7 @@ export type AlertDraftDto = Pick<
   | 'sourceLabel'
   | 'sourceUrl'
   | 'suggestedCondition'
+  | 'copySource'
 >;
 
 export interface PreviewAlertsRequest {
@@ -418,6 +432,7 @@ export interface AlertPreviewDto {
   groupCount: number;
   /** What today's alerts would say. Nothing is stored or sent. */
   alerts: StashAlertDto[];
+  ifm: IfmDiagnosticsDto;
 }
 
 export interface NotificationsStatusDto {
@@ -427,6 +442,7 @@ export interface NotificationsStatusDto {
   sentToday: number;
   dailyBudget: number;
   pending: StashAlertDto[];
+  ifm: IfmDiagnosticsDto;
 }
 
 export interface CreateFriendNoteRequest {

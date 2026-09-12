@@ -5,6 +5,7 @@ import type {
   AlertDraftDto,
   AlertPreviewDto,
   NotificationsStatusDto,
+  PromptCopySource,
   PushSubscriptionDto,
   SendAlertNowResponse,
   StashAlertDto,
@@ -106,6 +107,7 @@ export class NotificationsService {
       sentToday,
       dailyBudget: dailyAlertBudget(friendCount, groups.length),
       pending: pending.map((doc) => this.toDto(doc)),
+      ifm: this.promptsService.diagnostics(),
     };
   }
 
@@ -203,6 +205,7 @@ export class NotificationsService {
         sourceLabel: built.sourceLabel,
         sourceUrl: built.sourceUrl,
         suggestedCondition: built.suggestedCondition,
+        copySource: built.copySource,
         createdAt: now.toISOString(),
       });
     }
@@ -213,6 +216,7 @@ export class NotificationsService {
       friendCount: others.length,
       groupCount: groups.length,
       alerts,
+      ifm: this.promptsService.diagnostics(),
     };
   }
 
@@ -315,6 +319,7 @@ export class NotificationsService {
           sourceLabel: built.sourceLabel,
           sourceUrl: built.sourceUrl,
           suggestedCondition: built.suggestedCondition,
+          copySource: built.copySource,
         }),
       };
     }
@@ -340,6 +345,7 @@ export class NotificationsService {
       sourceLabel: draft.sourceLabel,
       sourceUrl: draft.sourceUrl,
       suggestedCondition: draft.suggestedCondition,
+      copySource: draft.copySource,
       deliveredPush: false,
       acknowledged: false,
     });
@@ -380,6 +386,7 @@ export class NotificationsService {
         schoolId: string;
         schoolName: string;
         suggestedCondition: string;
+        copySource: PromptCopySource;
       })
     | null
   > {
@@ -405,6 +412,7 @@ export class NotificationsService {
       schoolId,
       schoolName: meta.name,
       suggestedCondition: this.conditionFor(pick),
+      copySource: composed.source,
     };
   }
 
@@ -521,6 +529,7 @@ export class NotificationsService {
       suggestedCondition: doc.suggestedCondition,
       createdAt: (createdAt ?? new Date()).toISOString(),
       deliveredPush: Boolean(doc.deliveredPush),
+      copySource: doc.copySource,
     };
   }
 }

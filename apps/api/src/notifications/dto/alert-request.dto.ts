@@ -7,7 +7,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import type { StashAlertKind } from '@stashd/shared';
+import type { PromptCopySource, StashAlertKind } from '@stashd/shared';
 
 const KINDS: StashAlertKind[] = ['athletics', 'tradition', 'food', 'event', 'news'];
 
@@ -64,6 +64,10 @@ export class AlertDraftBodyDto {
   @IsString()
   @MaxLength(120)
   suggestedCondition?: string;
+
+  @IsOptional()
+  @IsIn(['ifm', 'fallback'])
+  copySource?: PromptCopySource;
 }
 
 export class SendAlertNowDto {
