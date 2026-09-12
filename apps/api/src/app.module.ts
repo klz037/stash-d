@@ -34,7 +34,6 @@ import { UsersModule } from './users/users.module';
     NotesModule,
     FriendshipsModule,
     GroupsModule,
-    SpotifyModule,
     StashesModule,
     PromptsModule,
     NotificationsModule,

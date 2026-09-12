@@ -61,12 +61,8 @@ export interface LockDto {
   recipientConfirmed: boolean;
   createdAt: string;
   unlockedAt: string | null;
-  /** Visible while sealed: lets the Stash show a record sleeve for songs. */
-  mediaKind: MediaKind;
   text?: string;
   imageUrl?: string;
-  /** Content. Absent from the JSON unless state === 'UNLOCKED'. */
-  song?: SongDto;
   contentHidden: boolean;
   groupId?: string;
   groupName?: string;
@@ -79,12 +75,6 @@ export interface CreateLockRequest {
   imageUrl?: string;
   conditionType: ConditionType;
   conditionLabel?: string;
-  /**
-   * A Spotify track id. The server re-resolves it against Spotify and stores
-   * canonical metadata — the client never supplies the album art URL, so a
-   * caller cannot inject an arbitrary image into someone else's Stash.
-   */
-  songTrackId?: string;
 }
 
 export interface SetConditionRequest {
@@ -274,49 +264,3 @@ export function generatePairingCode(random: () => number = Math.random): string 
 export function coarsenCoordinate(value: number): number {
   return Math.round(value * 100) / 100;
 }
-
-// ---------------------------------------------------------------------------
-// Songs
-//
-// A song is lock content, exactly like text and a photo. The whole SongDto is
-// stripped from the API response until the lock is UNLOCKED — the album art is
-// the reveal, so leaking it would give the lock away. `mediaKind` is the one
-// thing that stays visible while sealed: the *kind* of thing is metadata, the
-// *identity* of it is content.
-// ---------------------------------------------------------------------------
-
-export type MediaKind = 'TEXT' | 'PHOTO' | 'SONG';
-
-export interface SongDto {
-  trackId: string;
-  title: string;
-  artist: string;
-  albumArtUrl: string;
-  spotifyUrl: string;
-  /** 30s clip. Spotify omits it for plenty of tracks, so treat it as optional. */
-  previewUrl?: string;
-  durationMs?: number;
-}
-
-export interface SpotifyStatusDto {
-  connected: boolean;
-  displayName?: string;
-  /** False when the server has no Spotify credentials configured at all. */
-  available: boolean;
-}
-
-export interface SpotifyNowPlayingDto {
-  /** Null when nothing is playing right now — fall back to `recent`. */
-  current: SongDto | null;
-  recent: SongDto[];
-}
-
-export interface ResolveSongRequest {
-  /** A spotify.com track link, or a spotify:track:... URI. */
-  url: string;
-}
-
-export const SPOTIFY_SCOPES = [
-  'user-read-currently-playing',
-  'user-read-recently-played',
-] as const;
