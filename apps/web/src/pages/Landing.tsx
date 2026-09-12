@@ -80,7 +80,7 @@ export function Landing({
       <p className="lede intro">
         For the friends you don't see enough. Leave them a note, a photo, or a
         song they can't open yet. You pick when it opens: when they land, when
-        you're both holding, or whenever they decide. Until then it stays sealed.
+        you're both holding, or whenever they decide. Until then it stays stash'd.
       </p>
       {!isAuth0Configured || !onLogin ? (
         <div className="code-block">
