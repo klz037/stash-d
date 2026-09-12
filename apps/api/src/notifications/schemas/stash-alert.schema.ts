@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import type { StashAlertKind } from '@stashd/shared';
+import type { CurationSource, PromptCopySource, StashAlertKind } from '@stashd/shared';
 
 export type StashAlertDocument = HydratedDocument<StashAlert>;
 
@@ -41,6 +41,12 @@ export class StashAlert {
 
   @Prop()
   suggestedCondition?: string;
+
+  @Prop()
+  copySource?: PromptCopySource;
+
+  @Prop()
+  curationSource?: CurationSource;
 
   @Prop({ default: false })
   deliveredPush: boolean;

@@ -6,6 +6,7 @@ import {
   GroupDto,
   LockDto,
   NotificationsStatusDto,
+  PromptCopySource,
   PromptDto,
   SOCKET_EVENTS,
   StashAlertDto,
@@ -114,6 +115,12 @@ export function HomePage() {
   const [alertStatus, setAlertStatus] = useState<NotificationsStatusDto | null>(null);
   const [alertBusy, setAlertBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [shelfCopy, setShelfCopy] = useState<
+    Record<
+      string,
+      { title: string; body: string; source: PromptCopySource; forTitle: string; forBody: string }
+    >
+  >({});
   const [preview, setPreview] = useState<AlertPreviewDto | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const tokenRef = useRef('');
@@ -780,6 +787,61 @@ export function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, friends, inbox, sent, mySky, skyPrompts, calendar, promptTick]);
 
+  // K2 rewrites the shelf in its own voice. The facts (times, temperatures,
+  // calendars) stay exactly as the client worked them out; only the words change.
+  const shelfSignature = useMemo(
+    () => prompts.map((p) => `${p.id}\u0001${p.title}\u0001${p.body}`).join('\u0002'),
+    [prompts],
+  );
+  useEffect(() => {
+    if (!me || prompts.length === 0) return;
+    if (alertStatus && !alertStatus.ifm.configured) return;
+    const pending = prompts.filter((p) => {
+      const have = shelfCopy[p.id];
+      return !have || have.forTitle !== p.title || have.forBody !== p.body;
+    });
+    if (pending.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const access = tokenRef.current || (await token());
+        const { items, ifm } = await api.shelfCopy(access, {
+          items: pending.slice(0, 12).map((p) => ({
+            id: p.id,
+            title: p.title,
+            body: p.body,
+            kind: p.kind,
+            emotion: p.emotion,
+            friendName: p.friendName,
+          })),
+        });
+        if (cancelled) return;
+        setShelfCopy((current) => {
+          const next = { ...current };
+          for (const item of items) {
+            const original = pending.find((p) => p.id === item.id);
+            if (!original) continue;
+            next[item.id] = {
+              title: item.title,
+              body: item.body,
+              source: item.source,
+              forTitle: original.title,
+              forBody: original.body,
+            };
+          }
+          return next;
+        });
+        setAlertStatus((current) => (current ? { ...current, ifm } : current));
+      } catch {
+        // The shelf already shows the client-built words; K2 is a bonus here.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shelfSignature, me?.id, alertStatus?.ifm.configured]);
+
   useEffect(() => {
     if (skyPrompts.length === 0) return;
     const seen = loadNotified();
@@ -1153,7 +1215,11 @@ export function HomePage() {
           {me.stashAlertsEnabled && alertStatus ? (
             <p className="hint">
               {alertStatus.sentToday}/{alertStatus.dailyBudget} today
-              {alertStatus.pushConfigured ? '' : ' \u00b7 push not configured on server'}
+              {alertStatus.ifm.configured
+                ? alertStatus.ifm.lastResult === 'error'
+                  ? ' \u00b7 IFM failing, using rules + templates'
+                  : ` \u00b7 picked and written by ${alertStatus.ifm.model} (${alertStatus.ifm.usage.callsOk} calls)`
+                : ' \u00b7 IFM not configured, using rules + templates'}
               {' \u00b7 '}
               <button className="link" type="button" disabled={alertBusy} onClick={() => void sendTestAlert()}>
                 send one now
@@ -1365,22 +1431,33 @@ export function HomePage() {
 
           {prompts.length > 0 ? (
             <div className="prompt-rail">
-              {prompts.map((prompt) => (
-                <PromptCard
-                  key={prompt.id}
-                  prompt={prompt}
-                  onStash={(friendId) => openCapture(friendId)}
-                  onDismiss={(triggerKey) => {
-                    const result = dismissPrompt(triggerKey);
-                    setPromptTick((value) => value + 1);
-                    toast(
-                      result.retired
-                        ? 'Okay — not a thing anymore.'
-                        : 'Skipped. Twice retires it.',
-                    );
-                  }}
-                />
-              ))}
+              {prompts.map((prompt) => {
+                const rewritten = shelfCopy[prompt.id];
+                const byIfm =
+                  Boolean(rewritten) &&
+                  rewritten.source === 'ifm' &&
+                  rewritten.forTitle === prompt.title &&
+                  rewritten.forBody === prompt.body;
+                return (
+                  <PromptCard
+                    key={prompt.id}
+                    prompt={
+                      byIfm ? { ...prompt, title: rewritten.title, body: rewritten.body } : prompt
+                    }
+                    writtenByIfm={byIfm}
+                    onStash={(friendId) => openCapture(friendId)}
+                    onDismiss={(triggerKey) => {
+                      const result = dismissPrompt(triggerKey);
+                      setPromptTick((value) => value + 1);
+                      toast(
+                        result.retired
+                          ? 'Okay — not a thing anymore.'
+                          : 'Skipped. Twice retires it.',
+                      );
+                    }}
+                  />
+                );
+              })}
             </div>
           ) : null}
 

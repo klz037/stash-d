@@ -2,10 +2,13 @@ import type { PromptDto } from '@stashd/shared';
 
 export function PromptCard({
   prompt,
+  writtenByIfm = false,
   onStash,
   onDismiss,
 }: {
   prompt: PromptDto;
+  /** True when K2 rewrote the words (the facts still come from timing/weather/calendars). */
+  writtenByIfm?: boolean;
   onStash?: (friendId?: string) => void;
   onDismiss: (triggerKey: string) => void;
 }) {
@@ -19,6 +22,7 @@ export function PromptCard({
             : prompt.kind === 'tier05'
               ? 'you wrote this down'
               : 'on their calendar'}
+        {writtenByIfm ? <span className="prompt-ifm">· words by K2</span> : null}
       </div>
       <h3>{prompt.title}</h3>
       <p>{prompt.body}</p>
