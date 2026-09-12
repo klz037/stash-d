@@ -13,7 +13,7 @@ You *stash* something (verb), and what exists afterward is a *lock* (noun). Use 
 A lock has:
 - a sender
 - a recipient (can be yourself)
-- content (text, optionally one photo)
+- content (text, and optionally **one** photo or **one** song — never both)
 - a condition, written by hand in plain language
 - a state
 
@@ -23,7 +23,7 @@ A lock has:
 
 | State | What it means | What the recipient sees |
 |---|---|---|
-| `LOCKED` | Condition not yet satisfied | Sender, age, condition text. **Never the content.** |
+| `LOCKED` | Condition not yet satisfied | Sender, age, condition text, and what *kind* of thing it is. **Never the content.** |
 | `READY` | One party has confirmed on a TOGETHER lock; waiting on the other | Same as locked, plus "they're waiting on you" |
 | `UNLOCKED` | Content released | Everything |
 
@@ -136,6 +136,8 @@ Nobody can delete. Deleting after send is listed as out of scope below, and ther
 
 **The rule that matters:** the server strips `content` from the response for any lock in `LOCKED` or `READY` state. Not hidden in the frontend — absent from the JSON. Everything else is a detail; this is the demo.
 
+For a song, *all* of the track metadata is content — title, artist and album art alike. The album art is the reveal, so leaking it gives the lock away. The one exception is `mediaKind`, which stays visible while sealed so the Stash can show a record sleeve: **the kind of thing is metadata, the identity of it is content.** Never send a blurred version of the real cover as a teaser — a blur is often still recognisable, and it is still content.
+
 **Self-stash:** when sender and recipient are the same person, both columns apply. Handle this case explicitly or it will silently fall through to a 403.
 
 ---
@@ -170,6 +172,9 @@ Lock
   recipientId
   text
   imageUrl            (nullable)
+  song                (nullable — trackId, title, artist, albumArtUrl,
+                       spotifyUrl, previewUrl, durationMs)
+  mediaKind           TEXT | PHOTO | SONG  (visible while sealed)
   conditionType       MANUAL | TOGETHER | RECIPIENT_SET
   conditionLabel      (nullable — null until set on RECIPIENT_SET)
   state               LOCKED | READY | UNLOCKED
@@ -201,7 +206,8 @@ Every one of these starts by resolving the session and 401-ing if there isn't on
 - Auth0 login
 - Pairing by code and link
 - Self-stash
-- Text + one photoStash
+- Text + one photo
+- Songs from Spotify: stash what you're listening to, album art is the reveal
 - Three condition types
 - Hold to unlock
 - Together-unlock pushed over a live socket

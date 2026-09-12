@@ -1,7 +1,8 @@
-import { ConditionType, FriendDto } from '@stashd/shared';
+import { ConditionType, FriendDto, SongDto } from '@stashd/shared';
+import { SongPicker } from './SongPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-type Step = 'media' | 'text' | 'recipient' | 'condition';
+type Step = 'media' | 'song' | 'text' | 'recipient' | 'condition';
 
 async function compressImage(dataUrl: string, maxDim = 1280, quality = 0.72): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -29,11 +30,13 @@ async function compressImage(dataUrl: string, maxDim = 1280, quality = 0.72): Pr
 export function CaptureSheet({
   friends,
   presetRecipientId,
+  token,
   onClose,
   onSubmit,
 }: {
   friends: FriendDto[];
   presetRecipientId?: string;
+  token: () => Promise<string>;
   onClose: () => void;
   onSubmit: (input: {
     recipientId: string;
@@ -41,10 +44,12 @@ export function CaptureSheet({
     imageUrl?: string;
     conditionType: ConditionType;
     conditionLabel?: string;
+    songTrackId?: string;
   }) => Promise<void>;
 }) {
   const [step, setStep] = useState<Step>('media');
   const [imageUrl, setImageUrl] = useState<string>();
+  const [song, setSong] = useState<SongDto>();
   const [text, setText] = useState('');
   const [recipientId, setRecipientId] = useState(presetRecipientId ?? 'me');
   const [conditionType, setConditionType] = useState<ConditionType>('MANUAL');
@@ -173,6 +178,7 @@ export function CaptureSheet({
         recipientId: recipient?.isSelf ? 'me' : recipientId,
         text,
         imageUrl,
+        songTrackId: song?.trackId,
         conditionType,
         conditionLabel: conditionType === 'MANUAL' ? conditionLabel : undefined,
       });
@@ -236,6 +242,16 @@ export function CaptureSheet({
                 type="button"
                 onClick={() => {
                   stopCamera();
+                  setStep('song');
+                }}
+              >
+                Share a song
+              </button>
+              <button
+                className="btn-ghost"
+                type="button"
+                onClick={() => {
+                  stopCamera();
                   setStep('text');
                 }}
               >
@@ -249,6 +265,22 @@ export function CaptureSheet({
               hidden
               onChange={(event) => void onFile(event.target.files?.[0])}
             />
+          </>
+        ) : null}
+
+        {step === 'song' ? (
+          <>
+            <SongPicker
+              token={token}
+              selected={song}
+              onSelect={(picked) => setSong(picked)}
+              onBack={() => setStep('media')}
+            />
+            {song ? (
+              <button className="btn" type="button" onClick={() => setStep('text')}>
+                Write something
+              </button>
+            ) : null}
           </>
         ) : null}
 

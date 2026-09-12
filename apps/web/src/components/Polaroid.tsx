@@ -104,7 +104,12 @@ export function Polaroid({
       onPointerCancel={releaseHold}
     >
       <div className={`frame ${lock.state === 'UNLOCKED' ? 'unlocked' : ''}`}>
-        {lock.state === 'UNLOCKED' && lock.imageUrl ? (
+        {lock.state === 'UNLOCKED' && lock.song ? (
+          <img
+            src={lock.song.albumArtUrl}
+            alt={`${lock.song.title} by ${lock.song.artist}`}
+          />
+        ) : lock.state === 'UNLOCKED' && lock.imageUrl ? (
           <img src={lock.imageUrl} alt="" />
         ) : lock.state === 'UNLOCKED' ? (
           <p className="revealed-text" style={{ color: '#f3ead8' }}>
@@ -112,7 +117,15 @@ export function Polaroid({
           </p>
         ) : (
           <div className="hold-copy">
-            <div>{isRecipient ? `From ${lock.senderName}` : `To ${lock.recipientName}`}</div>
+            {lock.mediaKind === 'SONG' ? (
+              <div className="sleeve" aria-hidden="true">
+                <span className="sleeve-disc" />
+              </div>
+            ) : null}
+            <div>
+              {isRecipient ? `From ${lock.senderName}` : `To ${lock.recipientName}`}
+              {lock.mediaKind === 'SONG' ? ' · a song' : ''}
+            </div>
             <p className="condition">
               {lock.conditionLabel ?? 'You decide when this opens.'}
             </p>
@@ -158,7 +171,29 @@ export function Polaroid({
           </svg>
         ) : null}
       </div>
-      {lock.state === 'UNLOCKED' && lock.imageUrl && lock.text ? (
+      {lock.state === 'UNLOCKED' && lock.song ? (
+        <div className="song-reveal">
+          <div className="song-meta">
+            <strong>{lock.song.title}</strong>
+            <span>{lock.song.artist}</span>
+          </div>
+          {lock.song.previewUrl ? (
+            <audio className="song-preview" controls preload="none" src={lock.song.previewUrl}>
+              Your browser cannot play this preview.
+            </audio>
+          ) : null}
+          <a
+            className="btn-ghost song-open"
+            href={lock.song.spotifyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Open in Spotify
+          </a>
+        </div>
+      ) : null}
+
+      {lock.state === 'UNLOCKED' && (lock.imageUrl || lock.song) && lock.text ? (
         <p className="revealed-text">{lock.text}</p>
       ) : null}
       <div className="meta">

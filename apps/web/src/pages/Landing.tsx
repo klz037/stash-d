@@ -16,6 +16,7 @@ const previewLocked: LockDto = {
   recipientConfirmed: false,
   createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
   unlockedAt: null,
+  mediaKind: 'TEXT',
   contentHidden: true,
 };
 

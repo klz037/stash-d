@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { formatPairingCode, generatePairingCode, UserDto } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { AuthClaims } from '../auth/auth.types';
-import { User, UserDocument } from './schemas/user.schema';
+import { SpotifyTokens, User, UserDocument } from './schemas/user.schema';
 
 @Injectable()
 export class UsersService {
@@ -59,6 +59,7 @@ export class UsersService {
       schoolName: user.schoolName,
       city: user.city,
       weeklyRitual: user.weeklyRitual,
+      spotifyConnected: Boolean(user.spotify?.refreshToken),
     };
   }
 
@@ -77,6 +78,36 @@ export class UsersService {
     if (patch.weeklyRitual !== undefined) user.weeklyRitual = patch.weeklyRitual || undefined;
     await user.save();
     return user;
+  }
+
+  /** Finds the user an in-flight Spotify connect belongs to. */
+  async findBySpotifyState(state: string): Promise<UserDocument | null> {
+    if (!state) {
+      return null;
+    }
+    return this.userModel.findOne({ spotifyAuthState: state }).exec();
+  }
+
+  async setSpotifyState(
+    user: UserDocument,
+    state: string | undefined,
+  ): Promise<void> {
+    user.spotifyAuthState = state ?? null;
+    await user.save();
+  }
+
+  async setSpotifyTokens(
+    user: UserDocument,
+    tokens: SpotifyTokens,
+  ): Promise<void> {
+    user.spotify = tokens;
+    await user.save();
+  }
+
+  async clearSpotify(user: UserDocument): Promise<void> {
+    user.spotify = null;
+    user.spotifyAuthState = null;
+    await user.save();
   }
 
   private async uniquePairingCode(): Promise<string> {
