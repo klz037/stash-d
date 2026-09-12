@@ -19,6 +19,7 @@ import { UsersService } from '../users/users.service';
 type AuthedSocket = Socket & { userId?: string };
 
 @WebSocketGateway({
+  maxHttpBufferSize: 5e6,
   cors: { origin: true, credentials: true },
   namespace: '/',
 })

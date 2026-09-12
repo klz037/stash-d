@@ -18,6 +18,10 @@ export interface UserDto {
   pairingCodeDisplay: string;
   picture?: string;
   email?: string;
+  schoolId?: string;
+  schoolName?: string;
+  city?: string;
+  weeklyRitual?: string;
 }
 
 export interface FriendDto {
@@ -90,4 +94,39 @@ export function generatePairingCode(random: () => number = Math.random): string 
     code += PAIRING_ALPHABET[Math.floor(random() * PAIRING_ALPHABET.length)];
   }
   return code;
+}
+
+export interface FriendNoteDto {
+  id: string;
+  ownerId: string;
+  friendId: string;
+  friendName: string;
+  text: string;
+  dueAt?: string;
+  createdAt: string;
+}
+
+export interface PromptDto {
+  id: string;
+  kind: 'tier0' | 'tier05' | 'tier1';
+  emotion?: 'stress' | 'lull' | 'milestone' | 'weather' | 'reciprocity' | 'waiting' | 'memory';
+  title: string;
+  body: string;
+  friendId?: string;
+  friendName?: string;
+  sourceUrl?: string;
+  triggerKey: string;
+}
+
+export interface UpdateProfileRequest {
+  schoolId?: string;
+  schoolName?: string;
+  city?: string;
+  weeklyRitual?: string;
+}
+
+export interface CreateFriendNoteRequest {
+  friendId: string;
+  text: string;
+  dueAt?: string;
 }

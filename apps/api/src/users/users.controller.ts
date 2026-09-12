@@ -1,5 +1,5 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { UserDto } from '@stashd/shared';
+import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { UpdateProfileRequest, UserDto } from '@stashd/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserDocument } from './schemas/user.schema';
@@ -13,5 +13,14 @@ export class UsersController {
   @Get('me')
   me(@CurrentUser() user: UserDocument): UserDto {
     return this.usersService.toDto(user);
+  }
+
+  @Patch('me')
+  async updateMe(
+    @CurrentUser() user: UserDocument,
+    @Body() body: UpdateProfileRequest,
+  ): Promise<UserDto> {
+    const updated = await this.usersService.updateProfile(user, body);
+    return this.usersService.toDto(updated);
   }
 }

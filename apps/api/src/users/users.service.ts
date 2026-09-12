@@ -55,7 +55,28 @@ export class UsersService {
       pairingCodeDisplay: formatPairingCode(user.pairingCode),
       picture: user.picture,
       email: user.email,
+      schoolId: user.schoolId,
+      schoolName: user.schoolName,
+      city: user.city,
+      weeklyRitual: user.weeklyRitual,
     };
+  }
+
+  async updateProfile(
+    user: UserDocument,
+    patch: {
+      schoolId?: string;
+      schoolName?: string;
+      city?: string;
+      weeklyRitual?: string;
+    },
+  ): Promise<UserDocument> {
+    if (patch.schoolId !== undefined) user.schoolId = patch.schoolId || undefined;
+    if (patch.schoolName !== undefined) user.schoolName = patch.schoolName || undefined;
+    if (patch.city !== undefined) user.city = patch.city || undefined;
+    if (patch.weeklyRitual !== undefined) user.weeklyRitual = patch.weeklyRitual || undefined;
+    await user.save();
+    return user;
   }
 
   private async uniquePairingCode(): Promise<string> {

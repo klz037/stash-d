@@ -8,6 +8,7 @@ import { FriendshipsModule } from './friendships/friendships.module';
 import { HealthModule } from './health/health.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StashesModule } from './stashes/stashes.module';
+import { NotesModule } from './notes/notes.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     }),
     AuthModule,
     UsersModule,
+    NotesModule,
     FriendshipsModule,
     StashesModule,
     RealtimeModule,

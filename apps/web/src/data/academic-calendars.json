@@ -1,0 +1,68 @@
+{
+  "schools": [
+    {
+      "id": "cmu",
+      "name": "Carnegie Mellon",
+      "city": "Pittsburgh",
+      "lat": 40.4433,
+      "lon": -79.9436,
+      "sourceUrl": "https://www.cmu.edu/hub/calendar/",
+      "events": [
+        {"date": "2026-09-14", "label": "add/drop deadline", "kind": "stress"},
+        {"date": "2026-10-10", "label": "mid-semester break starts", "kind": "lull"},
+        {"date": "2026-10-13", "label": "mid-semester break ends", "kind": "stress"},
+        {"date": "2026-11-25", "label": "Thanksgiving recess starts", "kind": "lull"},
+        {"date": "2026-12-07", "label": "last day of classes", "kind": "milestone"},
+        {"date": "2026-12-08", "label": "reading day", "kind": "lull"},
+        {"date": "2026-12-09", "label": "final exams begin", "kind": "stress"},
+        {"date": "2026-12-16", "label": "final exams end", "kind": "milestone"},
+        {"date": "2027-01-12", "label": "spring semester begins", "kind": "milestone"},
+        {"date": "2027-03-06", "label": "spring break starts", "kind": "lull"},
+        {"date": "2027-03-14", "label": "spring break ends", "kind": "stress"},
+        {"date": "2027-05-09", "label": "commencement weekend", "kind": "milestone"}
+      ]
+    },
+    {
+      "id": "pitt",
+      "name": "University of Pittsburgh",
+      "city": "Pittsburgh",
+      "lat": 40.4442,
+      "lon": -79.9606,
+      "sourceUrl": "https://www.registrar.pitt.edu/calendars",
+      "events": [
+        {"date": "2026-09-05", "label": "add/drop period ends", "kind": "stress"},
+        {"date": "2026-10-17", "label": "fall break", "kind": "lull"},
+        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
+        {"date": "2026-12-05", "label": "last day of classes", "kind": "milestone"},
+        {"date": "2026-12-08", "label": "final exams begin", "kind": "stress"},
+        {"date": "2026-12-15", "label": "final exams end", "kind": "milestone"},
+        {"date": "2027-01-05", "label": "spring term begins", "kind": "milestone"},
+        {"date": "2027-03-08", "label": "spring recess starts", "kind": "lull"},
+        {"date": "2027-03-15", "label": "spring recess ends", "kind": "stress"},
+        {"date": "2027-04-30", "label": "last day of classes", "kind": "milestone"},
+        {"date": "2027-05-01", "label": "final exams begin", "kind": "stress"}
+      ]
+    },
+    {
+      "id": "nyu",
+      "name": "NYU",
+      "city": "New York",
+      "lat": 40.7295,
+      "lon": -73.9965,
+      "sourceUrl": "https://www.nyu.edu/students/student-guides/academic-calendar.html",
+      "events": [
+        {"date": "2026-09-15", "label": "add/drop deadline", "kind": "stress"},
+        {"date": "2026-10-12", "label": "fall recess", "kind": "lull"},
+        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
+        {"date": "2026-12-11", "label": "last day of classes", "kind": "milestone"},
+        {"date": "2026-12-15", "label": "final exams begin", "kind": "stress"},
+        {"date": "2027-01-20", "label": "spring semester begins", "kind": "milestone"},
+        {"date": "2027-03-15", "label": "spring break starts", "kind": "lull"},
+        {"date": "2027-03-22", "label": "spring break ends", "kind": "stress"},
+        {"date": "2027-05-04", "label": "last day of classes", "kind": "milestone"},
+        {"date": "2027-05-06", "label": "reading day", "kind": "lull"},
+        {"date": "2027-05-07", "label": "final exams begin", "kind": "stress"}
+      ]
+    }
+  ]
+}
