@@ -1,4 +1,5 @@
-import { isAuth0Configured } from '../lib/config';
+import { useEffect, useState } from 'react';
+import { apiUrl, isAuth0Configured } from '../lib/config';
 
 export function Landing({
   returnTo,
@@ -9,6 +10,32 @@ export function Landing({
   onLogin?: (returnTo?: string) => void;
   loading?: boolean;
 }) {
+  const [health, setHealth] = useState('Checking API…');
+
+  useEffect(() => {
+    const bases = [apiUrl, 'http://127.0.0.1:3000'].filter(
+      (value, index, all) => value !== undefined && all.indexOf(value) === index,
+    );
+    void (async () => {
+      for (const base of bases) {
+        try {
+          const response = await fetch(`${base}/api/health`);
+          if (!response.ok) continue;
+          const body = (await response.json()) as { mongo?: string };
+          setHealth(
+            body.mongo === 'up'
+              ? 'API connected · Mongo up'
+              : 'API reachable · Mongo not connected',
+          );
+          return;
+        } catch {
+          // try next origin
+        }
+      }
+      setHealth('API unreachable from this origin');
+    })();
+  }, []);
+
   return (
     <div className="pane" style={{ width: '100%' }}>
       <button className="wordmark" type="button">
@@ -38,6 +65,7 @@ export function Landing({
           Sign in
         </button>
       )}
+      <p className="hint">{health}</p>
     </div>
   );
 }
