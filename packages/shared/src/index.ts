@@ -356,7 +356,14 @@ export interface ComposePromptResponse {
 /** Whether IFM is wired up, how the most recent call went, and how much it is being used. */
 export interface IfmDiagnosticsDto {
   configured: boolean;
+  /** What IFM_MODEL asks for. */
   model: string;
+  /** What we actually send: IFM_MODEL if the endpoint lists it, else the closest K2 model it does list. */
+  resolvedModel?: string;
+  /** Model IDs the endpoint advertises on GET /models (first 40), when it supports that. */
+  availableModels?: string[];
+  /** A one-line explanation when the configured model had to be swapped or can't be found. */
+  modelHint?: string;
   lastResult: 'ok' | 'error' | null;
   lastError?: string;
   lastLatencyMs?: number;

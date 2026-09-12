@@ -26,8 +26,10 @@ export class PromptsController {
     return { items, ifm: this.prompts.diagnostics() };
   }
 
+  /** Diagnostics, with a fresh look at what models the endpoint serves. */
   @Get('ifm')
-  ifm(): IfmDiagnosticsDto {
+  async ifm(): Promise<IfmDiagnosticsDto> {
+    await this.prompts.listModels(true);
     return this.prompts.diagnostics();
   }
 }

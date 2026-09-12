@@ -13,6 +13,7 @@ const DEFAULT_MODEL = 'IFM/K2-Horizon-7B';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const CACHE_MAX = 1000;
 const SHELF_CONCURRENCY = 4;
+const MODELS_TTL_MS = 10 * 60 * 1000;
 
 const ALERT_KINDS: StashAlertKind[] = ['athletics', 'tradition', 'food', 'event', 'news'];
 
@@ -42,15 +43,25 @@ export class PromptsService {
     cacheHits: 0,
     jobs: { alertCopy: 0, curation: 0, shelfCopy: 0 },
   };
+  /** GET /models result, refreshed every 10 minutes; null when the endpoint doesn't offer it. */
+  private models: { at: number; ids: string[] | null; forBase: string } | null = null;
+  private modelHint: string | undefined;
+  /** Set after a gateway rejects the K2-specific extra field; we then omit it. */
+  private strictParams = false;
 
   get configured(): boolean {
     return Boolean(this.baseUrl() && process.env.IFM_API_KEY);
   }
 
   diagnostics(): IfmDiagnosticsDto {
+    const ids =
+      this.models && this.models.forBase === this.baseUrl() ? this.models.ids : null;
     return {
       configured: this.configured,
       model: this.model(),
+      resolvedModel: ids ? this.pickModel(ids) : undefined,
+      availableModels: ids ? ids.slice(0, 40) : undefined,
+      modelHint: this.modelHint,
       lastResult: this.lastResult,
       lastError: this.lastError,
       lastLatencyMs: this.lastLatencyMs,
@@ -59,6 +70,94 @@ export class PromptsService {
         jobs: { ...this.usage.jobs },
       },
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Which model ID this endpoint actually serves
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Hosts name the same weights differently (`IFM/K2-Horizon-7B`,
+   * `k2-horizon-7b`, a partner alias). Ask the endpoint what it lists and use
+   * IFM_MODEL only if it is there; otherwise take the closest K2 model. Also
+   * exposed as diagnostics so a wrong IFM_MODEL is a one-line fix, not a mystery.
+   */
+  async resolveModel(): Promise<string> {
+    const ids = await this.listModels();
+    return ids ? this.pickModel(ids) : this.model();
+  }
+
+  async listModels(force = false): Promise<string[] | null> {
+    const base = this.baseUrl();
+    if (!base || !this.configured) return null;
+    if (
+      !force &&
+      this.models &&
+      this.models.forBase === base &&
+      Date.now() - this.models.at < MODELS_TTL_MS
+    ) {
+      return this.models.ids;
+    }
+    let ids: string[] | null = null;
+    try {
+      const res = await fetch(`${base}/models`, {
+        headers: { Authorization: `Bearer ${process.env.IFM_API_KEY}` },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { data?: Array<{ id?: unknown }>; models?: Array<{ id?: unknown; name?: unknown }> };
+        const rows = data.data ?? data.models ?? [];
+        ids = rows
+          .map((row) => (typeof row.id === 'string' ? row.id : typeof (row as { name?: unknown }).name === 'string' ? String((row as { name?: unknown }).name) : ''))
+          .filter(Boolean);
+      }
+    } catch (err) {
+      this.logger.warn(`IFM /models failed: ${err instanceof Error ? err.message : 'unknown'}`);
+    }
+    this.models = { at: Date.now(), ids, forBase: base };
+    this.refreshHint(ids);
+    return ids;
+  }
+
+  private pickModel(ids: string[]): string {
+    const wanted = this.model();
+    if (ids.includes(wanted)) return wanted;
+    const lower = wanted.toLowerCase();
+    const exactCi = ids.find((id) => id.toLowerCase() === lower);
+    if (exactCi) return exactCi;
+    // Same family and size, different prefix or casing: `k2-horizon-7b` for `IFM/K2-Horizon-7B`.
+    const tail = lower.split('/').pop() ?? lower;
+    const sameTail = ids.find((id) => id.toLowerCase().endsWith(tail));
+    if (sameTail) return sameTail;
+    const k2 = ids.filter((id) => /k2|horizon/i.test(id));
+    if (k2.length > 0) {
+      // Prefer the smallest K2 Horizon size for latency; this is short copy, not research.
+      const size = (id: string) => Number(/(\d+(?:\.\d+)?)\s*b/i.exec(id)?.[1] ?? 999);
+      return [...k2].sort((a, b) => size(a) - size(b))[0];
+    }
+    return wanted;
+  }
+
+  private refreshHint(ids: string[] | null) {
+    const wanted = this.model();
+    if (!ids) {
+      this.modelHint = undefined;
+      return;
+    }
+    if (ids.length === 0) {
+      this.modelHint = 'The endpoint lists no models for this key.';
+      return;
+    }
+    if (ids.includes(wanted)) {
+      this.modelHint = undefined;
+      return;
+    }
+    const picked = this.pickModel(ids);
+    if (picked !== wanted) {
+      this.modelHint = `IFM_MODEL "${wanted}" is not served here; using "${picked}". Set IFM_MODEL=${picked} to make that explicit.`;
+    } else {
+      this.modelHint = `IFM_MODEL "${wanted}" is not served here and no K2 model is listed. Available: ${ids.slice(0, 8).join(', ')}${ids.length > 8 ? ', …' : ''}.`;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -266,30 +365,27 @@ export class PromptsService {
   ): Promise<T | null> {
     const started = Date.now();
     try {
-      const res = await fetch(`${this.baseUrl()}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.IFM_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.model(),
-          temperature: 1.0,
-          top_p: 0.95,
-          max_tokens: 2048,
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: user },
-          ],
-          chat_template_kwargs: { reasoning_effort: 'low' },
-        }),
-        signal: AbortSignal.timeout(this.timeoutMs()),
-      });
+      const model = await this.resolveModel();
+      let res = await this.completion(model, system, user, !this.strictParams);
+      if (res.status === 400 && !this.strictParams) {
+        // Strict OpenAI-compatible gateways reject fields they don't know.
+        // Try once without the K2-specific reasoning knob and remember the answer.
+        const retry = await this.completion(model, system, user, false);
+        if (retry.ok) {
+          this.strictParams = true;
+          this.logger.log('IFM endpoint rejects chat_template_kwargs; omitting it from now on');
+        }
+        res = retry.ok ? retry : res;
+      }
       this.lastLatencyMs = Date.now() - started;
 
       if (!res.ok) {
         const detail = (await res.text().catch(() => '')).slice(0, 200);
-        throw new Error(`IFM ${res.status}${detail ? `: ${detail}` : ''}`);
+        if (res.status === 400 || res.status === 404) {
+          // Most likely a model-name mismatch: refresh the list so the hint is current.
+          await this.listModels(true);
+        }
+        throw new Error(`IFM ${res.status}${detail ? `: ${detail}` : ''} (model "${model}")`);
       }
 
       const data = (await res.json()) as {
@@ -313,6 +409,28 @@ export class PromptsService {
       this.logger.warn(`IFM ${job} error: ${message}`);
       return null;
     }
+  }
+
+  private completion(model: string, system: string, user: string, withK2Kwargs: boolean) {
+    return fetch(`${this.baseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.IFM_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 1.0,
+        top_p: 0.95,
+        max_tokens: 2048,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        ...(withK2Kwargs ? { chat_template_kwargs: { reasoning_effort: 'low' } } : {}),
+      }),
+      signal: AbortSignal.timeout(this.timeoutMs()),
+    });
   }
 
   private record(result: 'ok' | 'error', error?: string, job?: Job) {
