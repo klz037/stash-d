@@ -70,7 +70,6 @@ export const SOCKET_EVENTS = {
   lockUnlocked: 'lock:unlocked',
   lockUpdated: 'lock:updated',
   friendPaired: 'friend:paired',
-  presence: 'presence:update',
 } as const;
 
 export function normalizePairingCode(input: string): string {
