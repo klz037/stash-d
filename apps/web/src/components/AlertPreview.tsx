@@ -29,6 +29,7 @@ function timeLabel(index: number, budget: number) {
 export function AlertPreview({
   preview,
   loading,
+  busy,
   pushConfigured,
   onClose,
   onRefresh,
@@ -38,14 +39,18 @@ export function AlertPreview({
 }: {
   preview: AlertPreviewDto | null;
   loading: boolean;
+  busy: boolean;
   pushConfigured: boolean;
   onClose: () => void;
   onRefresh: () => void;
+  /** Show this exact card as an OS notification right now. Nothing is stored. */
   onPop: (alert: StashAlertDto) => void;
-  onSendReal: () => void;
+  /** Store the card as one of today's alerts (spends budget) and pop it. */
+  onSendReal: (alert?: StashAlertDto) => void;
   onStash: (alert: StashAlertDto) => void;
 }) {
   const social = (preview?.friendCount ?? 0) + (preview?.groupCount ?? 0);
+  const first = preview?.alerts[0];
   return (
     <div className="sheet" role="dialog" aria-label="Alert preview">
       <div className="sheet-card">
@@ -101,10 +106,28 @@ export function AlertPreview({
                     {alert.sourceLabel ? ` · ${alert.sourceLabel}` : ''}
                   </em>
                   <div className="ios-notification-actions">
-                    <button type="button" className="chip" onClick={() => onPop(alert)}>
-                      Pop on this device
+                    <button
+                      type="button"
+                      className="chip"
+                      disabled={busy}
+                      onClick={() => onPop(alert)}
+                    >
+                      Pop up now
                     </button>
-                    <button type="button" className="chip active" onClick={() => onStash(alert)}>
+                    <button
+                      type="button"
+                      className="chip"
+                      disabled={busy}
+                      onClick={() => onSendReal(alert)}
+                    >
+                      Send for real
+                    </button>
+                    <button
+                      type="button"
+                      className="chip active"
+                      disabled={busy}
+                      onClick={() => onStash(alert)}
+                    >
                       Stash for {alert.friendName}
                     </button>
                   </div>
@@ -114,18 +137,23 @@ export function AlertPreview({
         </div>
 
         <p className="hint">
-          "Pop on this device" shows a real OS notification here on your laptop, no push server needed.
-          {pushConfigured
-            ? ' "Send one for real" goes through Web Push so it also lands on a locked iPhone.'
-            : ' Add VAPID keys to the API to push these to a locked iPhone.'}
+          "Pop up now" shows the card as a real notification in the corner of your screen, without
+          storing anything. "Send for real" stores it as one of today's alerts, counts it toward the
+          cap, and then pops it.
+          {pushConfigured ? ' It is also pushed to any device you have subscribed.' : ''}
         </p>
 
         <div className="preview-actions">
-          <button className="btn" type="button" onClick={onSendReal} disabled={loading}>
-            Send one for real
+          <button
+            className="btn"
+            type="button"
+            onClick={() => onSendReal(first)}
+            disabled={loading || busy || !first}
+          >
+            {busy ? 'Sending\u2026' : 'Send the first one for real'}
           </button>
-          <button className="btn-ghost" type="button" onClick={onRefresh} disabled={loading}>
-            Regenerate
+          <button className="btn-ghost" type="button" onClick={onRefresh} disabled={loading || busy}>
+            {loading ? 'Regenerating\u2026' : 'Regenerate'}
           </button>
         </div>
         <button className="btn-ghost" type="button" onClick={onClose} style={{ marginTop: 10 }}>

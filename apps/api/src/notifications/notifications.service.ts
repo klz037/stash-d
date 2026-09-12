@@ -2,9 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type {
+  AlertDraftDto,
   AlertPreviewDto,
   NotificationsStatusDto,
   PushSubscriptionDto,
+  SendAlertNowResponse,
   StashAlertDto,
 } from '@stashd/shared';
 import { Model } from 'mongoose';
@@ -140,21 +142,28 @@ export class NotificationsService {
   }
 
   /**
-   * Force one alert right now (demo / "send me a test"). Still respects the
-   * daily budget so a demo can't turn into spam.
+   * The user asked for one right now (demo / "send me a test"). A manual
+   * send is never spam, so it ignores the gap, quiet hours and the cap — but
+   * it still counts toward today's budget, so the cron sends fewer later.
+   * With a `draft`, we send exactly what the preview showed.
    */
-  async sendNow(user: UserDocument): Promise<StashAlertDto | null> {
-    return this.deliverForUser(user, { ignoreGapAndQuietHours: true });
+  async sendNow(
+    user: UserDocument,
+    draft?: AlertDraftDto,
+  ): Promise<SendAlertNowResponse> {
+    return this.deliverForUser(user, { manual: true, draft });
   }
 
   /**
    * Dry run: what would today's alerts look like for this user? Composes up
    * to the daily budget without storing, pushing, or spending anything —
-   * this is what the in-app preview and laptop demos use.
+   * this is what the in-app preview and laptop demos use. Without a `seed`
+   * this is today's actual plan; with one, friends and cues reshuffle.
    */
-  async preview(user: UserDocument): Promise<AlertPreviewDto> {
+  async preview(user: UserDocument, seed?: string): Promise<AlertPreviewDto> {
     const now = new Date();
     const day = dayStamp(now);
+    const salt = seed ? `${day}:${seed}` : day;
     const [friends, groups, sentToday] = await Promise.all([
       this.friendshipsService.listFriends(user),
       this.groupsService.list(user),
@@ -166,7 +175,7 @@ export class NotificationsService {
     const alerts: StashAlertDto[] = [];
     const usedCues = new Set<string>();
     const usedFriends = new Set<string>();
-    const candidates = this.rankFriends(others, usedFriends, day);
+    const candidates = this.rankFriends(others, usedFriends, salt);
 
     let guard = 0;
     while (alerts.length < budget && guard < budget * 3) {
@@ -175,7 +184,7 @@ export class NotificationsService {
         candidates.find((f) => !usedFriends.has(f.id)) ??
         candidates[alerts.length % Math.max(1, candidates.length)];
       if (!friend) break;
-      const built = await this.buildAlert(user, friend, usedCues, `${day}:${alerts.length}`);
+      const built = await this.buildAlert(user, friend, usedCues, `${salt}:${alerts.length}`);
       usedFriends.add(friend.id);
       if (!built) {
         if (usedFriends.size >= candidates.length) break;
@@ -214,7 +223,7 @@ export class NotificationsService {
     this.logger.log(`Alert tick for ${users.length} opted-in user(s)`);
     for (const user of users) {
       try {
-        await this.deliverForUser(user, {});
+        await this.deliverForUser(user, { manual: false });
       } catch (err) {
         this.logger.warn(
           `Alert failed for ${user._id}: ${err instanceof Error ? err.message : 'unknown'}`,
@@ -225,13 +234,14 @@ export class NotificationsService {
 
   private async deliverForUser(
     user: UserDocument,
-    opts: { ignoreGapAndQuietHours?: boolean },
-  ): Promise<StashAlertDto | null> {
+    opts: { manual: boolean; draft?: AlertDraftDto },
+  ): Promise<SendAlertNowResponse> {
     const now = new Date();
     const day = dayStamp(now);
+    const scheduled = !opts.manual;
 
-    if (!opts.ignoreGapAndQuietHours && QUIET_HOURS_UTC.has(now.getUTCHours())) {
-      return null;
+    if (scheduled && QUIET_HOURS_UTC.has(now.getUTCHours())) {
+      return { alert: null };
     }
 
     const [friends, groups] = await Promise.all([
@@ -240,28 +250,36 @@ export class NotificationsService {
     ]);
     const others = friends.filter((f) => !f.isSelf);
     const budget = dailyAlertBudget(others.length, groups.length, day);
-    if (budget === 0) return null;
+    if (budget === 0) return { alert: null, reason: 'no-friends' };
 
     const todays = await this.alertModel
       .find({ userId: user._id, day })
       .sort({ createdAt: -1 })
       .exec();
-    if (todays.length >= budget) return null;
+    if (scheduled && todays.length >= budget) return { alert: null };
 
     const last = todays[0];
     const lastAt = last
       ? new Date((last as unknown as { createdAt: Date }).createdAt).getTime()
       : 0;
-    if (!opts.ignoreGapAndQuietHours && now.getTime() - lastAt < MIN_GAP_MS) {
-      return null;
+    if (scheduled && now.getTime() - lastAt < MIN_GAP_MS) {
+      return { alert: null };
     }
 
     // Spread the remaining budget across the awake window so alerts don't cluster.
-    if (!opts.ignoreGapAndQuietHours) {
+    if (scheduled) {
       const awakeHours = 24 - QUIET_HOURS_UTC.size;
       const slot = Math.max(1, Math.floor(awakeHours / budget));
       const hourIndex = this.awakeHourIndex(now.getUTCHours());
-      if (hourIndex % slot !== 0) return null;
+      if (hourIndex % slot !== 0) return { alert: null };
+    }
+
+    if (opts.draft) {
+      const friend = others.find((f) => f.id === opts.draft?.friendId);
+      if (friend) {
+        return { alert: await this.store(user, day, { ...opts.draft, friendName: friend.displayName }) };
+      }
+      // A stale preview (friend removed since) falls through to a fresh compose.
     }
 
     const since = new Date(now.getTime() - RECENT_CUE_WINDOW_DAYS * 86_400_000);
@@ -272,42 +290,66 @@ export class NotificationsService {
     const usedFriendsToday = new Set(todays.map((a) => a.friendId));
 
     const candidates = this.rankFriends(others, usedFriendsToday, day);
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) return { alert: null, reason: 'no-friends' };
+
+    // Manual sends get a different shuffle each time so a demo never repeats itself.
+    const salt = opts.manual ? `${day}:${now.getTime()}` : day;
 
     for (const friend of candidates) {
       const built = await this.buildAlert(
         user,
         friend,
         usedCues,
-        `${day}:${user._id}:${friend.id}`,
+        `${salt}:${user._id}:${friend.id}`,
       );
       if (!built) continue;
-
-      const doc = await this.alertModel.create({
-        userId: user._id,
-        day,
-        title: built.title,
-        body: built.body,
-        kind: built.kind,
-        friendId: friend.id,
-        friendName: friend.displayName,
-        schoolId: built.schoolId,
-        schoolName: built.schoolName,
-        sourceLabel: built.sourceLabel,
-        sourceUrl: built.sourceUrl,
-        suggestedCondition: built.suggestedCondition,
-        deliveredPush: false,
-        acknowledged: false,
-      });
-
-      const delivered = await this.push(user._id, doc);
-      if (delivered) {
-        doc.deliveredPush = true;
-        await doc.save();
-      }
-      return this.toDto(doc);
+      return {
+        alert: await this.store(user, day, {
+          title: built.title,
+          body: built.body,
+          kind: built.kind,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          schoolId: built.schoolId,
+          schoolName: built.schoolName,
+          sourceLabel: built.sourceLabel,
+          sourceUrl: built.sourceUrl,
+          suggestedCondition: built.suggestedCondition,
+        }),
+      };
     }
-    return null;
+    return { alert: null, reason: 'no-cues' };
+  }
+
+  /** Persist one alert (spending budget) and push it to every subscribed device. */
+  private async store(
+    user: UserDocument,
+    day: string,
+    draft: AlertDraftDto,
+  ): Promise<StashAlertDto> {
+    const doc = await this.alertModel.create({
+      userId: user._id,
+      day,
+      title: draft.title,
+      body: draft.body,
+      kind: draft.kind,
+      friendId: draft.friendId,
+      friendName: draft.friendName,
+      schoolId: draft.schoolId,
+      schoolName: draft.schoolName,
+      sourceLabel: draft.sourceLabel,
+      sourceUrl: draft.sourceUrl,
+      suggestedCondition: draft.suggestedCondition,
+      deliveredPush: false,
+      acknowledged: false,
+    });
+
+    const delivered = await this.push(user._id, doc);
+    if (delivered) {
+      doc.deliveredPush = true;
+      await doc.save();
+    }
+    return this.toDto(doc);
   }
 
   /** Friends at a known school first, rotating who leads each day. */
@@ -393,13 +435,15 @@ export class NotificationsService {
       'food',
       'news',
     ];
-    const start = hashString(seed) % order.length;
+    const hash = hashString(seed);
+    const start = hash % order.length;
     for (let i = 0; i < order.length; i += 1) {
       const kind = order[(start + i) % order.length];
-      const match = fresh.find((item) => item.kind === kind);
-      if (match) return match;
+      const matches = fresh.filter((item) => item.kind === kind);
+      // Vary which item of the kind we pick too, so a reshuffle changes the cue, not just the kind.
+      if (matches.length > 0) return matches[Math.floor(hash / 7) % matches.length];
     }
-    return fresh[0];
+    return fresh[hash % fresh.length];
   }
 
   private conditionFor(item: SchoolHappening): string {
@@ -476,6 +520,7 @@ export class NotificationsService {
       sourceUrl: doc.sourceUrl,
       suggestedCondition: doc.suggestedCondition,
       createdAt: (createdAt ?? new Date()).toISOString(),
+      deliveredPush: Boolean(doc.deliveredPush),
     };
   }
 }

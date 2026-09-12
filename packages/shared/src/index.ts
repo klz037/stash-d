@@ -375,6 +375,39 @@ export interface StashAlertDto {
   sourceUrl?: string;
   suggestedCondition?: string;
   createdAt: string;
+  /** True when at least one of the user's devices accepted the Web Push. */
+  deliveredPush?: boolean;
+}
+
+/** The content of a previewed alert, so "send one for real" sends exactly what was shown. */
+export type AlertDraftDto = Pick<
+  StashAlertDto,
+  | 'title'
+  | 'body'
+  | 'kind'
+  | 'friendId'
+  | 'friendName'
+  | 'schoolId'
+  | 'schoolName'
+  | 'sourceLabel'
+  | 'sourceUrl'
+  | 'suggestedCondition'
+>;
+
+export interface PreviewAlertsRequest {
+  /** Omit for today's actual plan; pass anything else to reshuffle friends and cues. */
+  seed?: string;
+}
+
+export interface SendAlertNowRequest {
+  draft?: AlertDraftDto;
+}
+
+export type SendAlertNowReason = 'no-friends' | 'no-cues';
+
+export interface SendAlertNowResponse {
+  alert: StashAlertDto | null;
+  reason?: SendAlertNowReason;
 }
 
 export interface AlertPreviewDto {
