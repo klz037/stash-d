@@ -7,7 +7,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { LockDto, SOCKET_EVENTS } from '@stashd/shared';
+import { GroupDto, LockDto, SOCKET_EVENTS } from '@stashd/shared';
 import { decode, verify, JwtHeader, VerifyOptions } from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { Server, Socket } from 'socket.io';
@@ -113,6 +113,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
           : SOCKET_EVENTS.lockUpdated;
     for (const id of participants(lock)) {
       this.emitTo(id, event, views.get(id));
+    }
+  }
+
+  /** Every member hears the new roster, so their group list and recipient picker stay current. */
+  notifyGroupUpdated(group: GroupDto) {
+    for (const id of group.memberIds) {
+      this.toUser(id).emit(SOCKET_EVENTS.groupUpdated, group);
     }
   }
 

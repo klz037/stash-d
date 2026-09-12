@@ -1,4 +1,11 @@
-import type { FriendDto, FriendNoteDto, LockDto, PromptDto, UserDto } from '@stashd/shared';
+import type {
+  CalendarEventDto,
+  FriendDto,
+  FriendNoteDto,
+  LockDto,
+  PromptDto,
+  UserDto,
+} from '@stashd/shared';
 import calendarData from '../data/academic-calendars.json';
 
 type SchoolEvent = {
@@ -54,6 +61,8 @@ export function buildPrompts(input: {
   notes?: FriendNoteDto[];
   /** Current weather at the user's school, if they picked one. */
   weather?: { tempF: number; label: string } | null;
+  /** The user's own Google Calendar, via Auth0 Token Vault. */
+  calendar?: CalendarEventDto[];
   now?: Date;
 }): PromptDto[] {
   const now = input.now ?? new Date();
@@ -140,6 +149,34 @@ export function buildPrompts(input: {
       });
     }
 
+    // Their school's calendar. "Maya's finals start in 3 days" is the most
+    // reliable reason to stash something, and it costs the user nothing.
+    const friendSchool = schools.find((school) => school.id === friend.schoolId);
+    if (friendSchool) {
+      for (const event of friendSchool.events) {
+        const delta = daysBetween(now, new Date(`${event.date}T12:00:00`));
+        if (delta < 0 || delta > 7) continue;
+        const whenLabel = delta === 0 ? 'today' : delta === 1 ? 'tomorrow' : `in ${delta} days`;
+        push({
+          id: `fschool-${friend.id}-${event.date}`,
+          kind: 'tier1',
+          emotion: event.kind,
+          title: `${friend.displayName}: ${event.label} ${whenLabel}`,
+          body:
+            event.kind === 'stress'
+              ? `${friendSchool.name}. Stash something ${friend.displayName} opens when it's over.`
+              : event.kind === 'lull'
+                ? `${friendSchool.name}. A quiet stretch. Send something slow.`
+                : `${friendSchool.name}. Mark it with a polaroid.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          sourceUrl: friendSchool.sourceUrl,
+          triggerKey: `fschool:${friend.id}:${event.date}`,
+        });
+        break;
+      }
+    }
+
     const first = [...sentToThem, ...fromThem].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (first) {
       const created = new Date(first.createdAt);
@@ -178,6 +215,29 @@ export function buildPrompts(input: {
         triggerKey: `note:${note.id}:${note.dueAt}`,
       });
     }
+  }
+
+  // Your own calendar, read through Auth0 Token Vault. Anything in the next
+  // three days is a reason: "Stash something to open after."
+  for (const event of input.calendar ?? []) {
+    const start = new Date(event.allDay ? `${event.start}T12:00:00` : event.start);
+    const delta = daysBetween(now, start);
+    if (delta < 0 || delta > 3) continue;
+    const friend = friends[0];
+    if (!friend) break;
+    const when = event.allDay
+      ? delta === 0 ? 'Today' : delta === 1 ? 'Tomorrow' : `In ${delta} days`
+      : start.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    push({
+      id: `cal-${event.id}`,
+      kind: 'tier05',
+      emotion: 'milestone',
+      title: event.title,
+      body: `${when}. Stash something ${friend.displayName} opens once it's done.`,
+      friendId: friend.id,
+      friendName: friend.displayName,
+      triggerKey: `cal:${event.id}`,
+    });
   }
 
   const mySchool = schools.find((school) => school.id === input.me.schoolId);
@@ -272,4 +332,21 @@ export const SCHOOL_OPTIONS = schools.map((school) => ({
 /** The point we treat as "where you are": your school, never the device. */
 export function schoolLocation(schoolId?: string) {
   return SCHOOL_OPTIONS.find((school) => school.id === schoolId) ?? null;
+}
+
+/** Upcoming calendar events for a school, soonest first, with days until each. */
+export function schoolEventsFor(
+  schoolId: string,
+  now = new Date(),
+  withinDays = 14,
+): Array<{ date: string; label: string; kind: SchoolEvent['kind']; daysAway: number }> {
+  const school = schools.find((item) => item.id === schoolId);
+  if (!school) return [];
+  return school.events
+    .map((event) => ({
+      ...event,
+      daysAway: daysBetween(now, new Date(`${event.date}T12:00:00`)),
+    }))
+    .filter((event) => event.daysAway >= 0 && event.daysAway <= withinDays)
+    .sort((a, b) => a.daysAway - b.daysAway);
 }

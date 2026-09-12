@@ -1,8 +1,9 @@
 export const PAIRING_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const PAIRING_CODE_LENGTH = 6;
 export const HOLD_TO_UNLOCK_MS = 1500;
-/** Most people one lock can be addressed to. Keeps the ring dots legible. */
-export const MAX_RECIPIENTS = 8;
+/** Most people one lock can be addressed to. A whole group fits. */
+export const MAX_RECIPIENTS = 12;
+export const MAX_GROUP_MEMBERS = 12;
 
 export type ConditionType = 'MANUAL' | 'TOGETHER' | 'RECIPIENT_SET';
 export type LockState = 'LOCKED' | 'READY' | 'UNLOCKED';
@@ -149,6 +150,74 @@ export interface PairRequest {
   code: string;
 }
 
+// ---------------------------------------------------------------------------
+// Groups
+//
+// A named set of people with an invite code, exactly like pairing but N-way.
+// Being in a group with someone lets you stash to them, same as being paired.
+// A lock still carries its own recipientIds; picking a group in capture just
+// fills them in.
+// ---------------------------------------------------------------------------
+
+export interface GroupMemberDto {
+  id: string;
+  displayName: string;
+  schoolId?: string;
+  schoolName?: string;
+  city?: string;
+}
+
+export interface GroupDto {
+  id: string;
+  name: string;
+  inviteCode: string;
+  inviteCodeDisplay: string;
+  createdBy: string;
+  memberIds: string[];
+  members: GroupMemberDto[];
+  createdAt: string;
+}
+
+export interface CreateGroupRequest {
+  name: string;
+  /** Extra members to start with. Must be people you are paired with. */
+  memberIds?: string[];
+}
+
+export interface JoinGroupRequest {
+  code: string;
+}
+
+// ---------------------------------------------------------------------------
+// Calendar (Auth0 Token Vault → Google Calendar)
+//
+// Auth0 holds the user's Google token. The API exchanges the user's Auth0
+// access token for it and reads their next two weeks. The browser never sees
+// a Google credential and the API never stores one.
+// ---------------------------------------------------------------------------
+
+export interface CalendarEventDto {
+  id: string;
+  title: string;
+  /** ISO. Date-only for all-day events. */
+  start: string;
+  end?: string;
+  allDay: boolean;
+}
+
+export interface CalendarStatusDto {
+  /** False when the API has no Token Vault client configured. */
+  available: boolean;
+  /** True when Auth0 handed us a Google token for this user. */
+  connected: boolean;
+  reason?: string;
+}
+
+export interface CalendarDto {
+  status: CalendarStatusDto;
+  events: CalendarEventDto[];
+}
+
 export interface HereRequest {
   context: LockContext;
 }
@@ -165,6 +234,7 @@ export const SOCKET_EVENTS = {
   lockUnlocked: 'lock:unlocked',
   lockUpdated: 'lock:updated',
   friendPaired: 'friend:paired',
+  groupUpdated: 'group:updated',
 } as const;
 
 export function normalizePairingCode(input: string): string {

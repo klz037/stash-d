@@ -4,7 +4,9 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from './auth/auth.module';
 import { UserSyncInterceptor } from './auth/user-sync.interceptor';
+import { CalendarModule } from './calendar/calendar.module';
 import { FriendshipsModule } from './friendships/friendships.module';
+import { GroupsModule } from './groups/groups.module';
 import { HealthModule } from './health/health.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StashesModule } from './stashes/stashes.module';
@@ -28,6 +30,8 @@ import { UsersModule } from './users/users.module';
     UsersModule,
     NotesModule,
     FriendshipsModule,
+    GroupsModule,
+    CalendarModule,
     SpotifyModule,
     StashesModule,
     RealtimeModule,

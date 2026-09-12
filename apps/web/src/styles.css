@@ -739,3 +739,153 @@ button {
   height: 18px;
   accent-color: var(--accent);
 }
+
+/* --- top bar, profile menu, review ------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 8px;
+}
+
+.topbar .wordmark {
+  font-size: 1.05rem;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: var(--ink);
+  color: #fffdf8;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar.small {
+  width: 30px;
+  height: 30px;
+  font-size: 0.8rem;
+}
+
+.menu {
+  position: absolute;
+  top: 62px;
+  right: 14px;
+  width: min(88%, 340px);
+  max-height: 72%;
+  overflow: auto;
+  z-index: 6;
+  background: var(--polaroid);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 14px 14px 16px;
+  font-size: 0.88rem;
+}
+
+.menu h4 {
+  margin: 14px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.menu .field {
+  margin: 8px 0;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.menu-row small {
+  color: var(--ink-soft);
+  display: block;
+}
+
+.menu-row code {
+  letter-spacing: 0.12em;
+  font-size: 0.85rem;
+}
+
+.menu-profile {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.menu-profile strong {
+  display: block;
+}
+
+.menu-profile small {
+  color: var(--ink-soft);
+}
+
+.brand-big {
+  font-size: 3.2rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  text-align: center;
+  margin: 56px 0 10px;
+  line-height: 1;
+}
+
+.brand-big span {
+  color: var(--accent);
+}
+
+.review-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--polaroid);
+  margin-bottom: 8px;
+}
+
+.review-card strong {
+  display: block;
+}
+
+.review-card small {
+  display: block;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.review-summary {
+  margin: 12px 0 4px;
+}
+
+.section-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 14px 0 6px;
+}

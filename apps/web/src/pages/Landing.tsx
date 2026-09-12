@@ -1,6 +1,5 @@
 import { LockDto } from '@stashd/shared';
 import { useEffect, useState } from 'react';
-import { Brand } from '../components/Brand';
 import { Polaroid } from '../components/Polaroid';
 import { apiUrl, isAuth0Configured } from '../lib/config';
 
@@ -75,7 +74,9 @@ export function Landing({
 
   return (
     <div className="pane" style={{ width: '100%' }}>
-      <Brand />
+      <h1 className="brand-big">
+        stash<span>'d</span>
+      </h1>
       <p className="lede intro">
         For the friends you don't see enough. Leave them a note, a photo, or a
         song they can't open yet. You pick when it opens: when they land, when
@@ -101,7 +102,7 @@ export function Landing({
           Sign in
         </button>
       )}
-      <p className="hint">{health}</p>
+      <p className="hint" style={{ textAlign: 'center' }}>{health}</p>
       {!isAuth0Configured ? (
         <div className="feed" style={{ marginTop: 22 }}>
           <p className="lede">Try it. Press and hold the card.</p>

@@ -1,8 +1,11 @@
 import type {
+  CalendarDto,
   CreateFriendNoteRequest,
+  CreateGroupRequest,
   CreateLockRequest,
   FriendDto,
   FriendNoteDto,
+  GroupDto,
   HereResponse,
   LockContext,
   LockDto,
@@ -110,6 +113,19 @@ export const api = {
     }),
   spotifyDisconnect: (token: string) =>
     request<SpotifyStatusDto>('/api/spotify', token, { method: 'DELETE' }),
+  groups: (token: string) => request<GroupDto[]>('/api/groups', token),
+  createGroup: (token: string, body: CreateGroupRequest) =>
+    request<GroupDto>('/api/groups', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  joinGroup: (token: string, code: string) =>
+    request<GroupDto>('/api/groups/join', token, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  /** Your next two weeks, read from Google through Auth0 Token Vault. */
+  calendar: (token: string) => request<CalendarDto>('/api/calendar', token),
   notes: (token: string) => request<FriendNoteDto[]>('/api/notes', token),
   createNote: (token: string, body: CreateFriendNoteRequest) =>
     request<FriendNoteDto>('/api/notes', token, {

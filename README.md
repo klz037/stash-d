@@ -156,7 +156,16 @@ A lock can go to up to eight paired people. `TOGETHER` then means everyone holds
 
 A `context` (`coffee`, `walking-home`, `studying`, `home`) on a lock is a condition the app can recognise. When a recipient taps "I'm here" with the matching context, the lock's `contextMetAt` is stamped and everyone on it hears `lock:updated`. It does not change state. The hold is still the unlock.
 
-`requiresMfa` locks refuse `confirm` with a 403 `code: MFA_REQUIRED` unless the access token carries the `https://stashd/mfa` claim (set by a post-login Action after step-up). Enforced server-side, not in the UI.
+```
+GET    /api/groups
+POST   /api/groups           # { name, memberIds? } → invite code
+POST   /api/groups/join      # { code }
+GET    /api/calendar         # your next two weeks, via Auth0 Token Vault → Google
+```
+
+Groups are pairing, N-way: a name, an invite code, a member list. Being in a group with someone lets you stash to them. Picking a group in capture fills in the lock's recipients; locks never reference the group itself.
+
+The calendar route is the Auth0 story: the API exchanges the user's own access token for their Google token through Token Vault and reads the primary calendar. No Google credential is stored here or shown to the browser. Setup lives in [`auth0/README.md`](./auth0/README.md); without it the route reports `available: false` and nothing else changes.
 
 Existing local data from before groups: `db.locks.drop()` is fine, it's demo data. To keep it instead:
 

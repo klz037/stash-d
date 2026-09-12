@@ -1,28 +1,31 @@
 import {
+  CalendarDto,
   CONTEXT_LABELS,
   CONTEXTS,
   FriendDto,
-  FriendNoteDto,
+  GroupDto,
   LockContext,
   LockDto,
-  MFA_ACR_VALUE,
-  MFA_REQUIRED,
   PromptDto,
   SOCKET_EVENTS,
   UserDto,
 } from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Brand } from '../components/Brand';
-import { CaptureSheet } from '../components/CaptureSheet';
+import { CaptureSheet, Person } from '../components/CaptureSheet';
 import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
-import { api, ApiError } from '../lib/api';
-import { auth0, mfaStepUp } from '../lib/config';
-import { buildPrompts, dismissPrompt, SCHOOL_OPTIONS, schoolLocation } from '../lib/prompts';
-import { buildSkyPrompts, SkyMap, suggestConditions } from '../lib/sky';
+import { api } from '../lib/api';
+import {
+  buildPrompts,
+  dismissPrompt,
+  SCHOOL_OPTIONS,
+  schoolEventsFor,
+  schoolLocation,
+} from '../lib/prompts';
+import { buildSkyPrompts, SkyMap } from '../lib/sky';
 import { connectRealtime, disconnectRealtime } from '../lib/socket';
 import { describeSky, fetchSky, localClock, Sky } from '../lib/weather';
 
@@ -46,13 +49,18 @@ function loadNotified(): string[] {
   }
 }
 
+function initial(name: string) {
+  return (name.trim()[0] ?? '?').toUpperCase();
+}
+
 export function HomePage() {
-  const { getAccessTokenSilently, loginWithRedirect, logout, user: authUser } = useAuth0();
+  const { getAccessTokenSilently, logout, user: authUser } = useAuth0();
   const [me, setMe] = useState<UserDto | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
+  const [groups, setGroups] = useState<GroupDto[]>([]);
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
-  const [notes, setNotes] = useState<FriendNoteDto[]>([]);
+  const [calendar, setCalendar] = useState<CalendarDto | null>(null);
   const [skies, setSkies] = useState<SkyMap>({});
   const [showSent, setShowSent] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -61,16 +69,15 @@ export function HomePage() {
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
-  const [noteDraft, setNoteDraft] = useState('');
-  const [noteFriendId, setNoteFriendId] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groupCode, setGroupCode] = useState('');
+  const [groupBusy, setGroupBusy] = useState(false);
   const [hereBusy, setHereBusy] = useState<LockContext | null>(null);
   const [promptTick, setPromptTick] = useState(0);
   const [clockTick, setClockTick] = useState(0);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
-  // Mirrors `sent` so socket handlers can diff against the last known state
-  // without becoming stale closures.
   const sentRef = useRef<LockDto[]>([]);
   sentRef.current = sent;
 
@@ -88,6 +95,14 @@ export function HomePage() {
     return value;
   }, [getAccessTokenSilently]);
 
+  const loadGroups = useCallback(async () => {
+    try {
+      setGroups(await api.groups(tokenRef.current || (await token())));
+    } catch {
+      setGroups([]);
+    }
+  }, [token]);
+
   const refresh = useCallback(async () => {
     const access = await token();
     const [profile, friendList, incoming, outgoing] = await Promise.all([
@@ -100,12 +115,14 @@ export function HomePage() {
     setFriends(friendList);
     setInbox(incoming);
     setSent(outgoing);
+    await loadGroups();
+    // Calendar rides on Auth0 Token Vault. Unavailable is a normal answer.
     try {
-      setNotes(await api.notes(access));
+      setCalendar(await api.calendar(access));
     } catch {
-      setNotes([]);
+      setCalendar(null);
     }
-  }, [token]);
+  }, [token, loadGroups]);
 
   refreshRef.current = refresh;
 
@@ -158,7 +175,6 @@ export function HomePage() {
         const before = sentRef.current.find((item) => item.id === lock.id);
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
-        // The sender's moment: a recipient just said "I'm here."
         if (lock.contextMetAt && !before?.contextMetAt && lock.context && lock.contextMetByName) {
           toast(
             `${lock.contextMetByName} is ${CONTEXT_LABELS[lock.context]}. Your lock is ready to open.`,
@@ -168,6 +184,15 @@ export function HomePage() {
       socket.on(SOCKET_EVENTS.friendPaired, () => {
         void refreshRef.current();
         toast('You are paired.');
+      });
+      socket.on(SOCKET_EVENTS.groupUpdated, (group: GroupDto) => {
+        setGroups((current) => {
+          const index = current.findIndex((item) => item.id === group.id);
+          if (index === -1) return [group, ...current];
+          const copy = [...current];
+          copy[index] = group;
+          return copy;
+        });
       });
     });
     return () => {
@@ -187,13 +212,43 @@ export function HomePage() {
     return () => window.clearInterval(id);
   }, [inbox, sent]);
 
-  // Every school on the friend list (and mine) gets a sky: weather, local
-  // time, sunrise, sunset. Refreshed every ten minutes; never the device.
+  // Everyone you can stash to: paired friends plus group members.
+  const people = useMemo(() => {
+    const map: Record<string, Person> = {};
+    for (const friend of friends) {
+      map[friend.id] = {
+        id: friend.id,
+        displayName: friend.isSelf ? (me?.displayName ?? 'Me') : friend.displayName,
+        isSelf: friend.isSelf,
+        schoolId: friend.schoolId,
+        schoolName: friend.schoolName,
+        city: friend.city,
+        picture: friend.picture,
+      };
+    }
+    for (const group of groups) {
+      for (const member of group.members) {
+        if (!map[member.id]) {
+          map[member.id] = {
+            id: member.id,
+            displayName: member.displayName,
+            isSelf: member.id === me?.id,
+            schoolId: member.schoolId,
+            schoolName: member.schoolName,
+            city: member.city,
+          };
+        }
+      }
+    }
+    return map;
+  }, [friends, groups, me]);
+
+  // A sky for every school anyone we know is at. Refreshed every ten minutes.
   useEffect(() => {
     const ids = new Set<string>();
     if (me?.schoolId) ids.add(me.schoolId);
-    for (const friend of friends) {
-      if (friend.schoolId) ids.add(friend.schoolId);
+    for (const person of Object.values(people)) {
+      if (person.schoolId) ids.add(person.schoolId);
     }
     if (ids.size === 0) {
       setSkies({});
@@ -219,9 +274,8 @@ export function HomePage() {
       active = false;
       window.clearInterval(id);
     };
-  }, [me?.schoolId, friends]);
+  }, [me?.schoolId, people]);
 
-  // Sunrise and "it's 11 PM for Maya" depend on the clock, not on data.
   useEffect(() => {
     const id = window.setInterval(() => setClockTick((value) => value + 1), 60_000);
     return () => window.clearInterval(id);
@@ -233,15 +287,6 @@ export function HomePage() {
       setInbox((current) => upsertLock(current, lock));
       setSent((current) => upsertLock(current, lock));
     } catch (err) {
-      if (err instanceof ApiError && err.code === MFA_REQUIRED) {
-        // The server refused without the MFA claim. Go get a token that has it.
-        toast('This one needs your second key. One sec…');
-        await loginWithRedirect({
-          authorizationParams: { acr_values: MFA_ACR_VALUE, audience: auth0.audience },
-          appState: { returnTo: '/' },
-        });
-        return;
-      }
       toast(err instanceof Error ? err.message : 'Could not unlock.');
     }
   }
@@ -288,18 +333,39 @@ export function HomePage() {
     setPromptTick((value) => value + 1);
   }
 
-  async function saveNote() {
-    if (!noteFriendId || !noteDraft.trim()) {
-      return;
+  async function createGroup() {
+    const name = groupName.trim();
+    if (!name) return;
+    setGroupBusy(true);
+    try {
+      const group = await api.createGroup(tokenRef.current || (await token()), {
+        name,
+        memberIds: friends.filter((friend) => !friend.isSelf).map((friend) => friend.id),
+      });
+      setGroupName('');
+      await loadGroups();
+      toast(`${group.name} · code ${group.inviteCodeDisplay}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not create the group.');
+    } finally {
+      setGroupBusy(false);
     }
-    await api.createNote(tokenRef.current || (await token()), {
-      friendId: noteFriendId,
-      text: noteDraft.trim(),
-    });
-    setNoteDraft('');
-    toast('Saved to your notebook.');
-    setPromptTick((value) => value + 1);
-    await refresh();
+  }
+
+  async function joinGroup() {
+    const code = groupCode.trim();
+    if (!code) return;
+    setGroupBusy(true);
+    try {
+      const group = await api.joinGroup(tokenRef.current || (await token()), code);
+      setGroupCode('');
+      await loadGroups();
+      toast(`You're in ${group.name}.`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not join.');
+    } finally {
+      setGroupBusy(false);
+    }
   }
 
   async function here(context: LockContext) {
@@ -327,7 +393,6 @@ export function HomePage() {
   }
 
   const viewerId = me?.id ?? authUser?.sub ?? '';
-  // The API finishes the Spotify handshake and sends the browser back here.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('spotify');
@@ -352,7 +417,6 @@ export function HomePage() {
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [inbox],
   );
-  // Only show the "I'm here" row when some sealed card is actually waiting on a moment.
   const waitingContexts = useMemo(
     () =>
       new Set(
@@ -368,7 +432,6 @@ export function HomePage() {
       return [] as PromptDto[];
     }
     return buildSkyPrompts({ me, friends, skies });
-    // clockTick re-runs this every minute so sunrise / late-night prompts appear on time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, friends, skies, promptTick, clockTick]);
   const prompts = useMemo(() => {
@@ -376,12 +439,13 @@ export function HomePage() {
       return [] as PromptDto[];
     }
     const weather = mySky ? { tempF: mySky.tempF, label: mySky.label } : null;
-    return [...skyPrompts, ...buildPrompts({ me, friends, inbox, sent, notes, weather })].slice(0, 5);
+    return [
+      ...skyPrompts,
+      ...buildPrompts({ me, friends, inbox, sent, weather, calendar: calendar?.events }),
+    ].slice(0, 5);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me, friends, inbox, sent, notes, mySky, skyPrompts, promptTick]);
+  }, [me, friends, inbox, sent, mySky, skyPrompts, calendar, promptTick]);
 
-  // A sky prompt is the closest thing this app has to a notification: the
-  // first time one appears, it also lands as a toast. Once per trigger.
   useEffect(() => {
     if (skyPrompts.length === 0) return;
     const seen = loadNotified();
@@ -400,19 +464,9 @@ export function HomePage() {
     }
   }, [skyPrompts, toast]);
 
-  const suggestFor = useCallback(
-    (recipientIds: string[]) => {
-      const recipientSkies = friends
-        .filter((friend) => recipientIds.includes(friend.id) && friend.schoolId)
-        .map((friend) => skies[friend.schoolId as string])
-        .filter((sky): sky is Sky => Boolean(sky));
-      return suggestConditions(recipientSkies);
-    },
-    [friends, skies],
-  );
-
   const school = schoolLocation(me?.schoolId);
   const needsName = Boolean(me && !me.displayNameSet);
+  const paired = friends.filter((friend) => !friend.isSelf);
 
   const nameForm = (
     <form
@@ -440,13 +494,35 @@ export function HomePage() {
   return (
     <>
       <ToastStack toasts={toasts} />
-      <Brand onClick={() => setMenuOpen((value) => !value)} />
+      <div className="topbar">
+        <span className="wordmark">
+          stash<span>'d</span>
+        </span>
+        <button
+          className="avatar"
+          type="button"
+          aria-label="Profile and groups"
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          {me?.picture ? <img src={me.picture} alt="" /> : initial(me?.displayName ?? '?')}
+        </button>
+      </div>
+
       {menuOpen && me ? (
-        <div className="account">
-          <p>
-            {me.displayName} · {me.pairingCodeDisplay}
-            {mfaStepUp ? ` · Second key: ${me.mfa ? 'on' : 'off'}` : ''}
-          </p>
+        <div className="menu">
+          <div className="menu-profile">
+            <span className="avatar">
+              {me.picture ? <img src={me.picture} alt="" /> : initial(me.displayName)}
+            </span>
+            <div>
+              <strong>{me.displayName}</strong>
+              <small>
+                {school ? `${school.name} · ${school.city}` : 'No school yet'}
+                {mySky ? ` · ${describeSky(mySky)} · ${localClock(mySky.timezone)}` : ''}
+              </small>
+              <small>Your code {me.pairingCodeDisplay}</small>
+            </div>
+          </div>
           {nameForm}
           <label className="field">
             School
@@ -461,46 +537,95 @@ export function HomePage() {
                 </option>
               ))}
             </select>
-            {school ? (
-              <span className="hint">
-                {school.city}
-                {mySky ? ` · ${describeSky(mySky)} · ${localClock(mySky.timezone)}` : ''}
-                {'. '}Your school stands in for your location. No GPS.
-              </span>
-            ) : (
-              <span className="hint">
-                Your school stands in for your location, so friends know your weather and your
-                clock. No GPS.
-              </span>
-            )}
+            <span className="hint">
+              Your school stands in for your location: weather, clock, calendar. No GPS.
+            </span>
           </label>
-          <label className="field">
-            Notebook for a friend
-            <select
-              value={noteFriendId}
-              onChange={(event) => setNoteFriendId(event.target.value)}
-            >
-              <option value="">Who is this about?</option>
-              {friends
-                .filter((friend) => !friend.isSelf)
-                .map((friend) => (
-                  <option key={friend.id} value={friend.id}>
-                    {friend.displayName}
-                  </option>
-                ))}
-            </select>
+          {calendar?.status.available ? (
+            <p className="hint">
+              Google Calendar {calendar.status.connected ? 'connected' : 'not connected'}
+              {calendar.status.reason && !calendar.status.connected
+                ? ` · ${calendar.status.reason}`
+                : ''}
+            </p>
+          ) : null}
+
+          <h4>Paired with</h4>
+          {paired.length === 0 ? (
+            <p className="hint">Nobody yet. Your code is above.</p>
+          ) : (
+            paired.map((friend) => (
+              <div className="menu-row" key={friend.id}>
+                <span>
+                  {friend.displayName}
+                  <small>{friend.city ?? 'No school yet'}</small>
+                </span>
+                <span className="avatar small">
+                  {friend.picture ? <img src={friend.picture} alt="" /> : initial(friend.displayName)}
+                </span>
+              </div>
+            ))
+          )}
+
+          <h4>Groups</h4>
+          {groups.length === 0 ? (
+            <p className="hint">None yet. Make one or join with a code.</p>
+          ) : (
+            groups.map((group) => (
+              <div className="menu-row" key={group.id}>
+                <span>
+                  {group.name}
+                  <small>
+                    {group.members.length} {group.members.length === 1 ? 'person' : 'people'} ·{' '}
+                    {group.members.map((m) => m.displayName).join(', ')}
+                  </small>
+                </span>
+                <code>{group.inviteCodeDisplay}</code>
+              </div>
+            ))
+          )}
+          <form
+            className="field"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createGroup();
+            }}
+          >
+            <span>Create a group</span>
             <input
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              placeholder="her exam, thursday"
+              value={groupName}
+              maxLength={40}
+              onChange={(event) => setGroupName(event.target.value)}
+              placeholder="the apartment"
             />
-            <button className="btn" type="button" onClick={() => void saveNote()}>
-              Remember for me
+            <button className="btn" type="submit" disabled={groupBusy || !groupName.trim()}>
+              Create{paired.length > 0 ? ` with ${paired.length} paired` : ''}
             </button>
-          </label>
+          </form>
+          <form
+            className="field"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void joinGroup();
+            }}
+          >
+            <span>Join a group</span>
+            <input
+              value={groupCode}
+              maxLength={7}
+              onChange={(event) => setGroupCode(event.target.value.toUpperCase())}
+              placeholder="KRF-2M9"
+              autoCapitalize="characters"
+            />
+            <button className="btn-ghost" type="submit" disabled={groupBusy || !groupCode.trim()}>
+              Join
+            </button>
+          </form>
+
           <button
             className="btn-ghost"
             type="button"
+            style={{ marginTop: 12 }}
             onClick={() =>
               void logout({ logoutParams: { returnTo: window.location.origin } })
             }
@@ -543,13 +668,7 @@ export function HomePage() {
               </div>
             ) : (
               sent.map((lock) => (
-                <Polaroid
-                  key={lock.id}
-                  lock={lock}
-                  viewerId={viewerId}
-                  hasMfa={me?.mfa}
-                  onConfirm={confirm}
-                />
+                <Polaroid key={lock.id} lock={lock} viewerId={viewerId} onConfirm={confirm} />
               ))
             )}
           </div>
@@ -654,7 +773,6 @@ export function HomePage() {
                     key={lock.id}
                     lock={lock}
                     viewerId={viewerId}
-                    hasMfa={me?.mfa}
                     onConfirm={confirm}
                     onSetCondition={setCondition}
                     onReply={(recipientId) => {
@@ -683,10 +801,12 @@ export function HomePage() {
       {capturing ? (
         <CaptureSheet
           friends={friends}
+          groups={groups}
+          people={people}
+          skies={skies}
+          eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 14).slice(0, 2)}
           token={token}
           presetRecipientId={replyTo}
-          suggestFor={suggestFor}
-          mfaStepUp={mfaStepUp}
           onClose={() => setCapturing(false)}
           onSubmit={async (input) => {
             const lock = await api.createLock(tokenRef.current || (await token()), input);

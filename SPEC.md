@@ -54,7 +54,9 @@ Note this means a lock can exist with a null condition, briefly. The engine has 
 
 ## Groups
 
-A lock has one sender and one to eight recipients. There is no group object. "A group" is the set of people on a lock, picked in the recipient step. Every recipient must be paired with the sender; they do not need to be paired with each other.
+A lock has one sender and one to twelve recipients. A **group** is a named member list with an invite code, the same mechanism as pairing but N-way: anyone with the code can join from the profile menu. Being in a group with someone is permission to stash to them, exactly like being paired. Locks never reference a group; picking one in capture fills in the recipients. Recipients do not need to be paired with each other.
+
+Before sending, the sender sees each recipient's card: school, weather and local time, and the next two dates on that school's academic calendar. Then they confirm.
 
 | Type | With N recipients |
 |---|---|

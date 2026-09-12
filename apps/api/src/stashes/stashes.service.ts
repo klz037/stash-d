@@ -15,6 +15,7 @@ import {
 import { Model } from 'mongoose';
 import { AuthClaims } from '../auth/auth.types';
 import { FriendshipsService } from '../friendships/friendships.service';
+import { GroupsService } from '../groups/groups.service';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { CreateLockDto } from './dto/create-lock.dto';
@@ -40,6 +41,7 @@ export class StashesService {
     @InjectModel(Lock.name) private readonly lockModel: Model<LockDocument>,
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
+    private readonly groupsService: GroupsService,
     private readonly spotifyService: SpotifyService,
   ) {}
 
@@ -53,11 +55,14 @@ export class StashesService {
       throw new BadRequestException('Pick between one and eight people.');
     }
 
+    // Paired, or in a group together. Either is permission to stash to them.
     for (const recipientId of recipientIds) {
-      const paired = await this.friendshipsService.arePaired(actor._id, recipientId);
-      if (!paired) {
+      const allowed =
+        (await this.friendshipsService.arePaired(actor._id, recipientId)) ||
+        (await this.groupsService.shareGroup(actor._id, recipientId));
+      if (!allowed) {
         throw new ForbiddenException(
-          'You can only stash to yourself or people you are paired with.',
+          'You can only stash to yourself, people you are paired with, or people in your groups.',
         );
       }
     }

@@ -4,14 +4,30 @@ import {
   CONTEXTS,
   contextConditionLabel,
   FriendDto,
+  GroupDto,
   LockContext,
   MAX_RECIPIENTS,
   SongDto,
 } from '@stashd/shared';
 import { SongPicker } from './SongPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { suggestConditions, SkyMap } from '../lib/sky';
+import { describeSky, localClock, Sky } from '../lib/weather';
 
-type Step = 'media' | 'song' | 'text' | 'recipient' | 'condition';
+type Step = 'media' | 'song' | 'text' | 'recipient' | 'condition' | 'review';
+
+/** Anyone you can stash to: a paired friend or someone in one of your groups. */
+export type Person = {
+  id: string;
+  displayName: string;
+  isSelf: boolean;
+  schoolId?: string;
+  schoolName?: string;
+  city?: string;
+  picture?: string;
+};
+
+export type UpcomingEvent = { date: string; label: string; daysAway: number };
 
 async function compressImage(dataUrl: string, maxDim = 1280, quality = 0.72): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -36,22 +52,34 @@ async function compressImage(dataUrl: string, maxDim = 1280, quality = 0.72): Pr
   });
 }
 
+function initial(name: string) {
+  return (name.trim()[0] ?? '?').toUpperCase();
+}
+
+function whenLabel(daysAway: number) {
+  if (daysAway <= 0) return 'today';
+  if (daysAway === 1) return 'tomorrow';
+  return `in ${daysAway} days`;
+}
+
 export function CaptureSheet({
   friends,
+  groups,
+  people,
+  skies,
+  eventsFor,
   presetRecipientId,
   token,
-  suggestFor,
-  mfaStepUp,
   onClose,
   onSubmit,
 }: {
   friends: FriendDto[];
+  groups: GroupDto[];
+  people: Record<string, Person>;
+  skies: SkyMap;
+  eventsFor: (schoolId: string) => UpcomingEvent[];
   presetRecipientId?: string;
   token: () => Promise<string>;
-  /** Condition lines worked out from the recipients' skies. */
-  suggestFor?: (recipientIds: string[]) => string[];
-  /** Show the "needs a second key" toggle. Off until the tenant supports step-up. */
-  mfaStepUp?: boolean;
   onClose: () => void;
   onSubmit: (input: {
     recipientIds: string[];
@@ -60,7 +88,6 @@ export function CaptureSheet({
     conditionType: ConditionType;
     conditionLabel?: string;
     context?: LockContext | null;
-    requiresMfa?: boolean;
     songTrackId?: string;
   }) => Promise<void>;
 }) {
@@ -74,7 +101,6 @@ export function CaptureSheet({
   const [conditionType, setConditionType] = useState<ConditionType>('MANUAL');
   const [conditionLabel, setConditionLabel] = useState('');
   const [context, setContext] = useState<LockContext | null>(null);
-  const [requiresMfa, setRequiresMfa] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -83,13 +109,11 @@ export function CaptureSheet({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
-  // The label we filled in from a chip, so we can replace it (and only it)
-  // when the chip changes.
   const autoLabel = useRef('');
 
   const recipients = useMemo(
-    () => friends.filter((friend) => recipientIds.includes(friend.id)),
-    [friends, recipientIds],
+    () => recipientIds.map((id) => people[id]).filter((p): p is Person => Boolean(p)),
+    [people, recipientIds],
   );
   const isGroup = recipients.length > 1;
   const whoLabel =
@@ -102,10 +126,14 @@ export function CaptureSheet({
         : recipients.length === 2
           ? `${recipients[0].displayName} and ${recipients[1].displayName}`
           : `${recipients[0].displayName}, ${recipients[1].displayName} +${recipients.length - 2}`;
-  const suggestions = useMemo(
-    () => (suggestFor ? suggestFor(recipientIds) : []),
-    [suggestFor, recipientIds],
+  const recipientSkies = useMemo(
+    () =>
+      recipients
+        .map((p) => (p.schoolId ? skies[p.schoolId] : undefined))
+        .filter((sky): sky is Sky => Boolean(sky)),
+    [recipients, skies],
   );
+  const suggestions = useMemo(() => suggestConditions(recipientSkies), [recipientSkies]);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,7 +182,6 @@ export function CaptureSheet({
     };
   }, [step, imageUrl]);
 
-  // "You decide" only works with one person. Drop it if a second is added.
   useEffect(() => {
     if (isGroup && conditionType === 'RECIPIENT_SET') {
       setConditionType('MANUAL');
@@ -228,7 +255,25 @@ export function CaptureSheet({
     });
   }
 
-  /** Fill the condition from a chip unless the sender wrote their own. */
+  /** A group's other members, as recipient ids. */
+  function groupIds(group: GroupDto) {
+    return group.memberIds.filter((id) => !people[id]?.isSelf);
+  }
+
+  function groupSelected(group: GroupDto) {
+    const ids = groupIds(group);
+    return ids.length > 0 && ids.every((id) => recipientIds.includes(id));
+  }
+
+  function toggleGroup(group: GroupDto) {
+    const ids = groupIds(group);
+    setRecipientIds((current) =>
+      groupSelected(group)
+        ? current.filter((id) => !ids.includes(id))
+        : [...new Set([...current, ...ids])].slice(0, MAX_RECIPIENTS),
+    );
+  }
+
   function fillLabel(next: string) {
     if (!conditionLabel.trim() || conditionLabel === autoLabel.current) {
       autoLabel.current = next;
@@ -258,10 +303,8 @@ export function CaptureSheet({
     return undefined;
   }
 
-  const canStash =
-    !busy &&
-    recipientIds.length > 0 &&
-    (conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
+  const conditionReady =
+    recipientIds.length > 0 && (conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
 
   async function finish() {
     setBusy(true);
@@ -275,13 +318,21 @@ export function CaptureSheet({
         conditionType,
         conditionLabel: labelFor(conditionType),
         context: conditionType === 'RECIPIENT_SET' ? null : context,
-        requiresMfa: mfaStepUp ? requiresMfa : false,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not stash that.');
       setBusy(false);
     }
   }
+
+  const summary =
+    conditionType === 'RECIPIENT_SET'
+      ? 'They write the condition after it arrives.'
+      : conditionType === 'TOGETHER'
+        ? `${labelFor('TOGETHER') ?? 'Open together'}. ${
+            isGroup ? 'Everyone holds; the last hand opens it.' : 'Both of you hold.'
+          }`
+        : `“${labelFor('MANUAL')}”`;
 
   return (
     <div className="sheet" role="dialog" aria-modal="true">
@@ -295,13 +346,7 @@ export function CaptureSheet({
               {imageUrl ? (
                 <img className="camera-preview" src={imageUrl} alt="" />
               ) : (
-                <video
-                  ref={videoRef}
-                  className="camera-preview"
-                  playsInline
-                  muted
-                  autoPlay
-                />
+                <video ref={videoRef} className="camera-preview" playsInline muted autoPlay />
               )}
               {!cameraReady && !imageUrl ? (
                 <p className="camera-fallback">{cameraError || 'Opening camera…'}</p>
@@ -316,11 +361,7 @@ export function CaptureSheet({
               >
                 Take photo
               </button>
-              <button
-                className="btn-ghost"
-                type="button"
-                onClick={() => libraryRef.current?.click()}
-              >
+              <button className="btn-ghost" type="button" onClick={() => libraryRef.current?.click()}>
                 Library
               </button>
               <button
@@ -392,7 +433,25 @@ export function CaptureSheet({
         {step === 'recipient' ? (
           <>
             <h2>Who is this for?</h2>
-            <p className="lede">Tap more than one to send it to a group.</p>
+            <p className="lede">Tap more than one to send it to several people.</p>
+            {groups.length > 0 ? (
+              <>
+                <div className="section-label">Groups</div>
+                <div className="chips">
+                  {groups.map((group) => (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className={`chip ${groupSelected(group) ? 'active' : ''}`}
+                      onClick={() => toggleGroup(group)}
+                    >
+                      {group.name} · {groupIds(group).length}
+                    </button>
+                  ))}
+                </div>
+                <div className="section-label">People</div>
+              </>
+            ) : null}
             <div className="choices">
               {friends.map((friend) => (
                 <button
@@ -409,17 +468,27 @@ export function CaptureSheet({
                   {friend.online ? ' · online' : ''}
                 </button>
               ))}
-              <button
-                type="button"
-                className="choice"
-                onClick={() => setAdding((value) => !value)}
-              >
+              {Object.values(people)
+                .filter((p) => !p.isSelf && !friends.some((f) => f.id === p.id))
+                .map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`choice ${recipientIds.includes(p.id) ? 'active' : ''}`}
+                    onClick={() => toggleRecipient(p.id)}
+                  >
+                    {p.displayName}
+                    {p.city ? ` · ${p.city}` : ''}
+                    <small className="hint"> · from a group</small>
+                  </button>
+                ))}
+              <button type="button" className="choice" onClick={() => setAdding((value) => !value)}>
                 Add someone
               </button>
             </div>
             {adding ? (
               <p className="hint">
-                Pairing lives on the empty Stash. Close this, enter their code, then stash.
+                Pair with a code on the empty Stash, or join a group from your profile menu.
               </p>
             ) : null}
             <button
@@ -512,31 +581,71 @@ export function CaptureSheet({
                 </p>
               </div>
             ) : null}
-            {mfaStepUp ? (
-              <label className="field toggle">
-                <span>
-                  <input
-                    type="checkbox"
-                    checked={requiresMfa}
-                    onChange={(event) => setRequiresMfa(event.target.checked)}
-                  />{' '}
-                  Needs a second key
-                </span>
-                <span className="hint">
-                  They'll have to pass a second sign-in check before this one opens.
-                </span>
-              </label>
-            ) : null}
             <button
               className="btn"
               type="button"
-              disabled={!canStash}
-              onClick={() => void finish()}
+              disabled={!conditionReady}
+              onClick={() => setStep('review')}
             >
-              {busy ? 'Stashing…' : 'Stash'}
+              Review
             </button>
           </>
         ) : null}
+
+        {step === 'review' ? (
+          <>
+            <h2>Sending to {whoLabel}</h2>
+            {recipients.map((person) => {
+              const sky = person.schoolId ? skies[person.schoolId] : undefined;
+              const events = person.schoolId ? eventsFor(person.schoolId) : [];
+              return (
+                <div className="review-card" key={person.id}>
+                  <span className="avatar">
+                    {person.picture ? <img src={person.picture} alt="" /> : initial(person.displayName)}
+                  </span>
+                  <div>
+                    <strong>{person.isSelf ? 'You' : person.displayName}</strong>
+                    <small>
+                      {person.schoolName
+                        ? `${person.schoolName} · ${person.city ?? ''}`
+                        : 'No school set'}
+                    </small>
+                    {sky ? (
+                      <small>
+                        {describeSky(sky)} · {localClock(sky.timezone)} their time
+                      </small>
+                    ) : null}
+                    {events.map((event) => (
+                      <small key={event.date}>
+                        {event.label} {whenLabel(event.daysAway)}
+                      </small>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <p className="lede review-summary">{summary}</p>
+            {context ? (
+              <p className="hint">Tied to {CONTEXT_LABELS[context]}.</p>
+            ) : null}
+            <button className="btn" type="button" disabled={busy} onClick={() => void finish()}>
+              {busy
+                ? 'Stashing…'
+                : recipients.length === 1
+                  ? `Send to ${recipients[0].isSelf ? 'myself' : recipients[0].displayName}`
+                  : `Send to ${recipients.length} people`}
+            </button>
+            <button
+              className="btn-ghost"
+              type="button"
+              style={{ marginTop: 8 }}
+              onClick={() => setStep('condition')}
+            >
+              Back
+            </button>
+          </>
+        ) : null}
+
         {error ? <p className="error">{error}</p> : null}
         <button
           className="btn-ghost sheet-close"
