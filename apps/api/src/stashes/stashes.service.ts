@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { LockDto, MediaKind } from '@stashd/shared';
+import { LockDto } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { FriendshipsService } from '../friendships/friendships.service';
 import { GroupsService } from '../groups/groups.service';
@@ -20,8 +20,7 @@ import {
   defaultConditionLabel,
   isParticipant,
 } from './lock.engine';
-import { Lock, LockDocument, LockSong } from './schemas/lock.schema';
-import { SpotifyService } from '../spotify/spotify.service';
+import { Lock, LockDocument } from './schemas/lock.schema';
 
 @Injectable()
 export class StashesService {
@@ -30,7 +29,6 @@ export class StashesService {
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
     private readonly groupsService: GroupsService,
-    private readonly spotifyService: SpotifyService,
   ) {}
 
   async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument[]> {
@@ -68,64 +66,22 @@ export class StashesService {
     }
 
     const docs = await this.lockModel.insertMany(
-      recipientIds.map((recipientId) => {
-        const song = dto.songTrackId
-          ? (() => {
-              // Never trust client-supplied song metadata — re-resolve from the id
-              // so the stored album art URL is always one Spotify actually gave us.
-              return this.spotifyService.resolveTrack(actor, dto.songTrackId as string);
-            })()
-          : Promise.resolve(null);
-
-        return {
-          senderId: actor._id,
-          recipientId,
-          text: dto.text ?? '',
-          imageUrl: dto.imageUrl,
-          song: null,
-          mediaKind: dto.imageUrl ? 'PHOTO' : 'TEXT',
-          conditionType: dto.conditionType,
-          conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-          state: 'LOCKED' as const,
-          senderConfirmed: false,
-          recipientConfirmed: false,
-          unlockedAt: null,
-          groupId,
-          groupName,
-        };
-      }),
+      recipientIds.map((recipientId) => ({
+        senderId: actor._id,
+        recipientId,
+        text: dto.text ?? '',
+        imageUrl: dto.imageUrl,
+        conditionType: dto.conditionType,
+        conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
+        state: 'LOCKED' as const,
+        senderConfirmed: false,
+        recipientConfirmed: false,
+        unlockedAt: null,
+        groupId,
+        groupName,
+      })),
     );
-
-    const resolved = await Promise.all(
-      recipientIds.map(async (recipientId) => {
-        let song: LockSong | null = null;
-        if (dto.songTrackId) {
-          song = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
-        }
-
-        const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
-
-        return {
-          senderId: actor._id,
-          recipientId,
-          text: dto.text ?? '',
-          imageUrl: dto.imageUrl,
-          song,
-          mediaKind,
-          conditionType: dto.conditionType,
-          conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-          state: 'LOCKED' as const,
-          senderConfirmed: false,
-          recipientConfirmed: false,
-          unlockedAt: null,
-          groupId,
-          groupName,
-        };
-      }),
-    );
-
-    const created = await this.lockModel.create(resolved);
-    return created as unknown as LockDocument[];
+    return docs as unknown as LockDocument[];
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
@@ -193,12 +149,8 @@ export class StashesService {
       recipientConfirmed: lock.recipientConfirmed,
       createdAt: (lock.createdAt ?? new Date()).toISOString(),
       unlockedAt: lock.unlockedAt ? lock.unlockedAt.toISOString() : null,
-      // mediaKind is metadata and stays visible while sealed; everything below
-      // it is content and is absent from the JSON until state === 'UNLOCKED'.
-      mediaKind: lock.mediaKind ?? 'TEXT',
       text: revealed ? lock.text : undefined,
       imageUrl: revealed ? lock.imageUrl : undefined,
-      song: revealed ? (lock.song ?? undefined) : undefined,
       contentHidden: !revealed,
       groupId: lock.groupId,
       groupName: lock.groupName,

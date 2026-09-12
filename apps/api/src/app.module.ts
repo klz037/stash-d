@@ -10,7 +10,6 @@ import { HealthModule } from './health/health.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StashesModule } from './stashes/stashes.module';
 import { NotesModule } from './notes/notes.module';
-import { SpotifyModule } from './spotify/spotify.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -30,7 +29,6 @@ import { UsersModule } from './users/users.module';
     NotesModule,
     FriendshipsModule,
     GroupsModule,
-    SpotifyModule,
     StashesModule,
     RealtimeModule,
     HealthModule,
