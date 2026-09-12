@@ -1,6 +1,6 @@
 # stash'd
 
-A lock you send across a distance. You *stash* something — a note, a photo, a memory — and what exists afterward is a **lock**. Your friend holds to open it when the condition is met.
+A lock you send across a distance. You *stash* something — a note, a photo, a memory — and what exists afterward is a **stash**. Your friend holds to open it when the condition is met.
 
 This repo is a hackathon vertical slice: Auth0 login, pairing by code, create a lock, hold-to-unlock, and live Socket.IO feedback when it opens.
 
