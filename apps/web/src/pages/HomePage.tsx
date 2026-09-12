@@ -16,7 +16,13 @@ import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
 import { fetchSchoolWeather, watchCoarseLocation } from '../lib/location';
-import { buildPrompts, dismissPrompt, schoolById, SCHOOL_OPTIONS } from '../lib/prompts';
+import {
+  buildPrompts,
+  dismissPrompt,
+  polishPromptsWithIfm,
+  schoolById,
+  SCHOOL_OPTIONS,
+} from '../lib/prompts';
 import { connectRealtime, disconnectRealtime, getRealtime } from '../lib/socket';
 
 function upsertLock(list: LockDto[], next: LockDto) {
@@ -52,6 +58,7 @@ export function HomePage() {
     Record<string, { tempF: number; label: string }>
   >({});
   const [promptTick, setPromptTick] = useState(0);
+  const [prompts, setPrompts] = useState<PromptDto[]>([]);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
@@ -326,10 +333,38 @@ export function HomePage() {
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [inbox],
   );
-  const prompts = useMemo(() => {
-    if (!me) return [] as PromptDto[];
-    return buildPrompts({ me, friends, inbox, sent, notes, weatherBySchool });
-  }, [me, friends, inbox, sent, notes, weatherBySchool, promptTick]);
+
+  useEffect(() => {
+    if (!me) {
+      setPrompts([]);
+      return;
+    }
+    const base = buildPrompts({
+      me,
+      friends,
+      groups,
+      inbox,
+      sent,
+      notes,
+      weatherBySchool,
+    });
+    setPrompts(base);
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const access = tokenRef.current || (await token());
+        const polished = await polishPromptsWithIfm(base, access);
+        if (!cancelled) setPrompts(polished);
+      } catch {
+        // Keep template shelf copy — IFM is optional.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [me, friends, groups, inbox, sent, notes, weatherBySchool, promptTick, token]);
 
   return (
     <>

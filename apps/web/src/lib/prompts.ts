@@ -1,5 +1,15 @@
-import type { FriendDto, FriendNoteDto, LockDto, PromptDto, UserDto } from '@stashd/shared';
+import type {
+  ComposePromptRequest,
+  FriendDto,
+  FriendNoteDto,
+  GroupDto,
+  LockDto,
+  PromptDto,
+  UserDto,
+} from '@stashd/shared';
 import calendarData from '../data/academic-calendars.json';
+import campusLifeData from '../data/campus-life.json';
+import { api } from './api';
 
 type SchoolEvent = {
   date: string;
@@ -17,10 +27,24 @@ type School = {
   events: SchoolEvent[];
 };
 
+type CampusLife = {
+  athletics: Array<{ label: string; month: number; day: number }>;
+  traditions: string[];
+  food: string[];
+};
+
 const schools = calendarData.schools as School[];
+const campusLife = campusLifeData.schools as Record<string, CampusLife>;
 
 type DismissMap = Record<string, number>;
 const DISMISS_KEY = 'stashd.promptDismissals';
+const DAILY_KEY = 'stashd.promptDailyShelf';
+
+type DailyShelf = {
+  date: string;
+  triggerKeys: string[];
+  budget: number;
+};
 
 export function loadDismissals(): DismissMap {
   try {
@@ -46,6 +70,14 @@ function dayStamp(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
+function hashString(value: string): number {
+  let h = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    h = (h * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
 function placeCondition(label: string): string {
   const lower = label.toLowerCase();
   if (lower.includes('cafe') || lower.includes('coffee')) {
@@ -65,9 +97,200 @@ export function schoolById(id?: string): School | undefined {
   return schools.find((school) => school.id === id);
 }
 
+function loadDailyShelf(): DailyShelf | null {
+  try {
+    return JSON.parse(localStorage.getItem(DAILY_KEY) ?? 'null') as DailyShelf | null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDailyShelf(shelf: DailyShelf) {
+  localStorage.setItem(DAILY_KEY, JSON.stringify(shelf));
+}
+
+/** When friends+groups > 4, cap shelf to 3–4 cards/day (stable for the day). */
+export function dailyShelfBudget(friendCount: number, groupCount: number, now = new Date()): number {
+  const social = friendCount + groupCount;
+  if (social <= 4) return 6;
+  return hashString(dayStamp(now)) % 2 === 0 ? 3 : 4;
+}
+
+function priority(prompt: PromptDto): number {
+  if (prompt.kind === 'campus' && prompt.emotion === 'athletics') return 0;
+  if (prompt.kind === 'tier0' && prompt.emotion === 'waiting') return 1;
+  if (prompt.kind === 'campus' && prompt.emotion === 'tradition') return 2;
+  if (prompt.kind === 'campus' && prompt.emotion === 'food') return 3;
+  if (prompt.kind === 'location') return 4;
+  if (prompt.kind === 'weather') return 5;
+  if (prompt.kind === 'tier0') return 6;
+  if (prompt.kind === 'tier05') return 7;
+  return 8;
+}
+
+function applyDailyBudget(candidates: PromptDto[], budget: number, now: Date): PromptDto[] {
+  const sorted = [...candidates].sort((a, b) => priority(a) - priority(b));
+  const date = dayStamp(now);
+  const existing = loadDailyShelf();
+
+  if (
+    existing &&
+    existing.date === date &&
+    existing.budget === budget &&
+    existing.triggerKeys.length > 0
+  ) {
+    const byKey = new Map(sorted.map((p) => [p.triggerKey, p]));
+    const restored = existing.triggerKeys
+      .map((key) => byKey.get(key))
+      .filter((p): p is PromptDto => Boolean(p));
+    if (restored.length > 0) {
+      // Fill gaps if some were dismissed, without exceeding budget.
+      if (restored.length < budget) {
+        const used = new Set(restored.map((p) => p.triggerKey));
+        for (const next of sorted) {
+          if (used.has(next.triggerKey)) continue;
+          restored.push(next);
+          used.add(next.triggerKey);
+          if (restored.length >= budget) break;
+        }
+        saveDailyShelf({
+          date,
+          budget,
+          triggerKeys: restored.map((p) => p.triggerKey),
+        });
+      }
+      return restored.slice(0, budget);
+    }
+  }
+
+  // Prefer diversity across friends / schools.
+  const picked: PromptDto[] = [];
+  const usedFriends = new Set<string>();
+  const usedSchools = new Set<string>();
+
+  for (const prompt of sorted) {
+    if (picked.length >= budget) break;
+    const friendBusy = prompt.friendId && usedFriends.has(prompt.friendId);
+    const schoolBusy = prompt.schoolId && usedSchools.has(prompt.schoolId);
+    if (friendBusy && schoolBusy && picked.length + 1 < budget) continue;
+    picked.push(prompt);
+    if (prompt.friendId) usedFriends.add(prompt.friendId);
+    if (prompt.schoolId) usedSchools.add(prompt.schoolId);
+  }
+
+  for (const prompt of sorted) {
+    if (picked.length >= budget) break;
+    if (picked.some((p) => p.triggerKey === prompt.triggerKey)) continue;
+    picked.push(prompt);
+  }
+
+  saveDailyShelf({
+    date,
+    budget,
+    triggerKeys: picked.map((p) => p.triggerKey),
+  });
+  return picked;
+}
+
+function athleticsWithinWindow(
+  event: { month: number; day: number },
+  now: Date,
+  windowDays = 10,
+): number | null {
+  const year = now.getFullYear();
+  let when = new Date(year, event.month - 1, event.day, 12, 0, 0);
+  const delta = daysBetween(now, when);
+  if (delta >= -2 && delta <= windowDays) return delta;
+  when = new Date(year + 1, event.month - 1, event.day, 12, 0, 0);
+  const nextDelta = daysBetween(now, when);
+  if (nextDelta >= -2 && nextDelta <= windowDays) return nextDelta;
+  return null;
+}
+
+function pickRotated<T>(items: T[], seed: string): T | undefined {
+  if (items.length === 0) return undefined;
+  return items[hashString(seed) % items.length];
+}
+
+function campusPromptsForFriend(friend: FriendDto, now: Date): PromptDto[] {
+  const school = schoolById(friend.schoolId);
+  if (!school) return [];
+  const life = campusLife[school.id];
+  if (!life) return [];
+
+  const out: PromptDto[] = [];
+  const stamp = dayStamp(now);
+
+  for (const event of life.athletics) {
+    const delta = athleticsWithinWindow(event, now);
+    if (delta === null) continue;
+    const whenLabel =
+      delta === 0 ? 'today' : delta < 0 ? 'just wrapped' : `in ${delta} day${delta === 1 ? '' : 's'}`;
+    out.push({
+      id: `campus-ath-${friend.id}-${event.month}-${event.day}`,
+      kind: 'campus',
+      emotion: 'athletics',
+      title: `${school.name} · ${event.label}`,
+      body: `${event.label} is ${whenLabel} for ${friend.displayName}'s campus. Stash the game-day mood before it's gone.`,
+      friendId: friend.id,
+      friendName: friend.displayName,
+      schoolId: school.id,
+      suggestedCondition: 'Open after the game',
+      triggerKey: `campus:ath:${friend.id}:${event.month}-${event.day}:${stamp}`,
+    });
+  }
+
+  const tradition = pickRotated(life.traditions, `${school.id}:trad:${stamp}:${friend.id}`);
+  if (tradition) {
+    out.push({
+      id: `campus-trad-${friend.id}-${stamp}`,
+      kind: 'campus',
+      emotion: 'tradition',
+      title: `${school.name} tradition`,
+      body: `${tradition} — stash something for ${friend.displayName} that only makes sense at ${school.name}.`,
+      friendId: friend.id,
+      friendName: friend.displayName,
+      schoolId: school.id,
+      suggestedCondition: 'Open when you remember this place',
+      triggerKey: `campus:trad:${friend.id}:${stamp}`,
+    });
+  }
+
+  const food = pickRotated(life.food, `${school.id}:food:${stamp}:${friend.id}`);
+  if (food) {
+    out.push({
+      id: `campus-food-${friend.id}-${stamp}`,
+      kind: 'campus',
+      emotion: 'food',
+      title: 'What did you eat today?',
+      body: `Send ${friend.displayName} a food polaroid — ${food} energy from their world.`,
+      friendId: friend.id,
+      friendName: friend.displayName,
+      schoolId: school.id,
+      suggestedCondition: 'Open when you eat something good',
+      triggerKey: `campus:food:${friend.id}:${stamp}`,
+    });
+  }
+
+  return out;
+}
+
+function emotionForCompose(
+  emotion: PromptDto['emotion'],
+): ComposePromptRequest['emotion'] {
+  if (emotion === 'athletics') return 'athletics';
+  if (emotion === 'tradition') return 'tradition';
+  if (emotion === 'food') return 'food';
+  if (emotion === 'weather') return 'weather';
+  if (emotion === 'place') return 'place';
+  if (emotion === 'stress' || emotion === 'lull' || emotion === 'milestone') return 'calendar';
+  return 'soft';
+}
+
 export function buildPrompts(input: {
   me: UserDto;
   friends: FriendDto[];
+  groups?: GroupDto[];
   inbox: LockDto[];
   sent: LockDto[];
   notes?: FriendNoteDto[];
@@ -78,6 +301,7 @@ export function buildPrompts(input: {
   const dismissals = loadDismissals();
   const prompts: PromptDto[] = [];
   const friends = input.friends.filter((friend) => !friend.isSelf);
+  const groups = input.groups ?? [];
 
   function push(prompt: PromptDto) {
     if ((dismissals[prompt.triggerKey] ?? 0) >= 2) return;
@@ -200,6 +424,10 @@ export function buildPrompts(input: {
       });
     }
 
+    for (const campus of campusPromptsForFriend(friend, now)) {
+      push(campus);
+    }
+
     const friendSchool = schoolById(friend.schoolId);
     if (friendSchool) {
       for (const event of friendSchool.events) {
@@ -221,6 +449,7 @@ export function buildPrompts(input: {
           body,
           friendId: friend.id,
           friendName: friend.displayName,
+          schoolId: friendSchool.id,
           sourceUrl: friendSchool.sourceUrl,
           triggerKey: `friend-school:${friend.id}:${event.date}:${event.kind}`,
         });
@@ -251,6 +480,7 @@ export function buildPrompts(input: {
           body: `${weather.tempF}°F and ${weather.label} near ${friend.displayName}'s campus. Stash something for when they get inside.`,
           friendId: friend.id,
           friendName: friend.displayName,
+          schoolId: friendSchool.id,
           suggestedCondition: 'Open when you get inside',
           triggerKey: `weather:${friend.id}:${dayStamp(now)}:${weather.label}`,
         });
@@ -276,54 +506,99 @@ export function buildPrompts(input: {
     }
   }
 
-  const mySchool = schoolById(input.me.schoolId);
-  if (mySchool) {
-    for (const event of mySchool.events) {
-      const when = new Date(`${event.date}T12:00:00`);
-      const delta = daysBetween(now, when);
-      if (delta < 0 || delta > 14) continue;
+  // Only use *recipient* school cues for campus/calendar shelf — skip sender-school fanout
+  // when the graph is large so we don't spam the rail.
+  const budget = dailyShelfBudget(friends.length, groups.length, now);
+  if (budget > 4) {
+    const mySchool = schoolById(input.me.schoolId);
+    if (mySchool) {
+      for (const event of mySchool.events) {
+        const when = new Date(`${event.date}T12:00:00`);
+        const delta = daysBetween(now, when);
+        if (delta < 0 || delta > 14) continue;
+        const friend = friends[0];
+        if (!friend) break;
+        const whenLabel = delta === 0 ? 'today' : `in ${delta} day${delta === 1 ? '' : 's'}`;
+        const body =
+          event.kind === 'stress'
+            ? `${mySchool.name}'s ${event.label} is ${whenLabel}. Stash something ${friend.displayName} can open when it hits.`
+            : event.kind === 'lull'
+              ? `${event.label} at ${mySchool.name}. Soft day — send ${friend.displayName} something quiet.`
+              : `${event.label} at ${mySchool.name}. Mark it with a polaroid for ${friend.displayName}.`;
+        push({
+          id: `school-${mySchool.id}-${event.date}`,
+          kind: 'tier1',
+          emotion: event.kind,
+          title: event.label,
+          body,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          schoolId: mySchool.id,
+          sourceUrl: mySchool.sourceUrl,
+          triggerKey: `school:${mySchool.id}:${event.date}:${event.kind}`,
+        });
+      }
+    }
+
+    if (input.me.weeklyRitual) {
       const friend = friends[0];
-      if (!friend) break;
-      const whenLabel = delta === 0 ? 'today' : `in ${delta} day${delta === 1 ? '' : 's'}`;
-      const body =
-        event.kind === 'stress'
-          ? `${mySchool.name}'s ${event.label} is ${whenLabel}. Stash something ${friend.displayName} can open when it hits.`
-          : event.kind === 'lull'
-            ? `${event.label} at ${mySchool.name}. Soft day — send ${friend.displayName} something quiet.`
-            : `${event.label} at ${mySchool.name}. Mark it with a polaroid for ${friend.displayName}.`;
-      push({
-        id: `school-${mySchool.id}-${event.date}`,
-        kind: 'tier1',
-        emotion: event.kind,
-        title: event.label,
-        body,
-        friendId: friend.id,
-        friendName: friend.displayName,
-        sourceUrl: mySchool.sourceUrl,
-        triggerKey: `school:${mySchool.id}:${event.date}:${event.kind}`,
-      });
+      if (friend) {
+        push({
+          id: `ritual-${dayStamp(now)}`,
+          kind: 'tier0',
+          emotion: 'milestone',
+          title: input.me.weeklyRitual,
+          body: `After ${input.me.weeklyRitual}, stash something for ${friend.displayName}.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          triggerKey: `ritual:${input.me.weeklyRitual}:${dayStamp(now)}`,
+        });
+      }
     }
   }
 
-  if (input.me.weeklyRitual) {
-    const friend = friends[0];
-    if (friend) {
-      push({
-        id: `ritual-${dayStamp(now)}`,
-        kind: 'tier0',
-        emotion: 'milestone',
-        title: input.me.weeklyRitual,
-        body: `After ${input.me.weeklyRitual}, stash something for ${friend.displayName}.`,
-        friendId: friend.id,
-        friendName: friend.displayName,
-        triggerKey: `ritual:${input.me.weeklyRitual}:${dayStamp(now)}`,
-      });
-    }
-  }
+  return applyDailyBudget(prompts, budget, now);
+}
 
-  const priority = (kind: PromptDto['kind']) =>
-    kind === 'location' ? 0 : kind === 'weather' ? 1 : kind === 'tier0' ? 2 : kind === 'tier05' ? 3 : 4;
-  return prompts.sort((a, b) => priority(a.kind) - priority(b.kind)).slice(0, 6);
+/** Polish campus shelf cards with IFM when configured; keep local copy on failure. */
+export async function polishPromptsWithIfm(
+  prompts: PromptDto[],
+  token: string,
+): Promise<PromptDto[]> {
+  const campus = prompts.filter((p) => p.kind === 'campus');
+  if (campus.length === 0) return prompts;
+
+  const polished = await Promise.all(
+    campus.map(async (prompt) => {
+      const school = schoolById(prompt.schoolId);
+      if (!school) return prompt;
+      const cue =
+        prompt.emotion === 'food'
+          ? prompt.body
+          : prompt.title.includes('·')
+            ? prompt.title.split('·').slice(1).join('·').trim()
+            : prompt.title;
+      try {
+        const composed = await api.composePrompt(token, {
+          schoolId: school.id,
+          schoolName: school.name,
+          cue,
+          emotion: emotionForCompose(prompt.emotion),
+          recipientName: prompt.friendName,
+        });
+        return {
+          ...prompt,
+          title: composed.title || prompt.title,
+          body: composed.body || prompt.body,
+        };
+      } catch {
+        return prompt;
+      }
+    }),
+  );
+
+  const byId = new Map(polished.map((p) => [p.id, p]));
+  return prompts.map((p) => byId.get(p.id) ?? p);
 }
 
 export const SCHOOL_OPTIONS = schools.map((school) => ({

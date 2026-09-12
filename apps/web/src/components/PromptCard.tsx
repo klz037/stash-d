@@ -3,6 +3,12 @@ import type { PromptDto } from '@stashd/shared';
 function kicker(prompt: PromptDto) {
   if (prompt.kind === 'location') return 'near them';
   if (prompt.kind === 'weather') return 'where they go to school';
+  if (prompt.kind === 'campus') {
+    if (prompt.emotion === 'athletics') return 'on their campus';
+    if (prompt.emotion === 'tradition') return 'their school tradition';
+    if (prompt.emotion === 'food') return 'what they eat';
+    return 'their campus';
+  }
   if (prompt.kind === 'tier0') return 'from your shelf';
   if (prompt.kind === 'tier05') return 'you wrote this down';
   return 'on their calendar';

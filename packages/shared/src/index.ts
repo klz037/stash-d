@@ -147,7 +147,7 @@ export interface CreateFriendNoteRequest {
 
 export interface PromptDto {
   id: string;
-  kind: 'tier0' | 'tier05' | 'tier1' | 'location' | 'weather';
+  kind: 'tier0' | 'tier05' | 'tier1' | 'location' | 'weather' | 'campus';
   emotion?:
     | 'stress'
     | 'lull'
@@ -156,7 +156,10 @@ export interface PromptDto {
     | 'reciprocity'
     | 'waiting'
     | 'memory'
-    | 'place';
+    | 'place'
+    | 'athletics'
+    | 'tradition'
+    | 'food';
   title: string;
   body: string;
   friendId?: string;
@@ -164,6 +167,30 @@ export interface PromptDto {
   sourceUrl?: string;
   triggerKey: string;
   suggestedCondition?: string;
+  /** School the prompt is about (usually the recipient's). */
+  schoolId?: string;
+}
+
+export interface ComposePromptRequest {
+  schoolId: string;
+  schoolName: string;
+  cue: string;
+  emotion:
+    | 'athletics'
+    | 'tradition'
+    | 'food'
+    | 'calendar'
+    | 'weather'
+    | 'place'
+    | 'soft';
+  recipientName?: string;
+}
+
+export interface ComposePromptResponse {
+  title: string;
+  body: string;
+  cta: string;
+  source: 'ifm' | 'fallback';
 }
 
 export const SOCKET_EVENTS = {

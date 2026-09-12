@@ -10,6 +10,7 @@ import { HealthModule } from './health/health.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StashesModule } from './stashes/stashes.module';
 import { NotesModule } from './notes/notes.module';
+import { PromptsModule } from './prompts/prompts.module';
 import { SpotifyModule } from './spotify/spotify.module';
 import { UsersModule } from './users/users.module';
 
@@ -32,6 +33,7 @@ import { UsersModule } from './users/users.module';
     GroupsModule,
     SpotifyModule,
     StashesModule,
+    PromptsModule,
     RealtimeModule,
     HealthModule,
   ],

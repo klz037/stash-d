@@ -1,4 +1,6 @@
 import type {
+  ComposePromptRequest,
+  ComposePromptResponse,
   CreateFriendNoteRequest,
   CreateGroupRequest,
   CreateLockRequest,
@@ -103,6 +105,11 @@ export const api = {
     }),
   joinGroup: (token: string, body: JoinGroupRequest) =>
     request<GroupDto>('/api/groups/join', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  composePrompt: (token: string, body: ComposePromptRequest) =>
+    request<ComposePromptResponse>('/api/prompts/compose', token, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
