@@ -1,4 +1,37 @@
-import type { AlertPreviewDto, StashAlertDto } from '@stashd/shared';
+import type { AlertPreviewDto, IfmDiagnosticsDto, StashAlertDto } from '@stashd/shared';
+
+function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
+  if (!ifm.configured) {
+    return (
+      <p className="hint ifm-status">
+        <strong>IFM: not configured.</strong> These are template words. Set{' '}
+        <code>IFM_API_URL</code> and <code>IFM_API_KEY</code> in <code>apps/api/.env</code> and
+        restart the API to have {ifm.model} write them.
+      </p>
+    );
+  }
+  if (ifm.lastResult === 'error') {
+    return (
+      <p className="hint ifm-status error">
+        <strong>IFM: last call failed</strong> ({ifm.lastError ?? 'unknown error'}), so these fell
+        back to template words. Model: {ifm.model}.
+      </p>
+    );
+  }
+  if (ifm.lastResult === 'ok') {
+    return (
+      <p className="hint ifm-status ok">
+        <strong>IFM: connected.</strong> {ifm.model}
+        {ifm.lastLatencyMs ? ` · last reply in ${(ifm.lastLatencyMs / 1000).toFixed(1)}s` : ''}.
+      </p>
+    );
+  }
+  return (
+    <p className="hint ifm-status">
+      <strong>IFM: configured</strong> ({ifm.model}), no call made yet.
+    </p>
+  );
+}
 
 function kindLabel(kind: StashAlertDto['kind']) {
   switch (kind) {
@@ -104,6 +137,10 @@ export function AlertPreview({
                   <em>
                     {alert.friendName} · {alert.schoolName} · {kindLabel(alert.kind)}
                     {alert.sourceLabel ? ` · ${alert.sourceLabel}` : ''}
+                    {' · '}
+                    <span className={`copy-source ${alert.copySource === 'ifm' ? 'ifm' : ''}`}>
+                      {alert.copySource === 'ifm' ? 'written by IFM' : 'template copy'}
+                    </span>
                   </em>
                   <div className="ios-notification-actions">
                     <button
@@ -135,6 +172,8 @@ export function AlertPreview({
               </article>
             ))}
         </div>
+
+        {preview ? <IfmStatus ifm={preview.ifm} /> : null}
 
         <p className="hint">
           "Pop up now" shows the card as a real notification in the corner of your screen, without

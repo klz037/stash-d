@@ -1153,7 +1153,11 @@ export function HomePage() {
           {me.stashAlertsEnabled && alertStatus ? (
             <p className="hint">
               {alertStatus.sentToday}/{alertStatus.dailyBudget} today
-              {alertStatus.pushConfigured ? '' : ' \u00b7 push not configured on server'}
+              {alertStatus.ifm.configured
+                ? alertStatus.ifm.lastResult === 'error'
+                  ? ' \u00b7 IFM failing, using templates'
+                  : ` \u00b7 words by ${alertStatus.ifm.model}`
+                : ' \u00b7 IFM not configured, using templates'}
               {' \u00b7 '}
               <button className="link" type="button" disabled={alertBusy} onClick={() => void sendTestAlert()}>
                 send one now
