@@ -1,3 +1,4 @@
+import { ConditionType, FriendDto, GroupDto } from '@stashd/shared';
 import { ConditionType, FriendDto, SongDto } from '@stashd/shared';
 import { SongPicker } from './SongPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -29,17 +30,22 @@ async function compressImage(dataUrl: string, maxDim = 1280, quality = 0.72): Pr
 
 export function CaptureSheet({
   friends,
+  groups = [],
   presetRecipientId,
+  presetConditionLabel,
   token,
   onClose,
   onSubmit,
 }: {
   friends: FriendDto[];
+  groups?: GroupDto[];
   presetRecipientId?: string;
+  presetConditionLabel?: string;
   token: () => Promise<string>;
   onClose: () => void;
   onSubmit: (input: {
-    recipientId: string;
+    recipientId?: string;
+    groupId?: string;
     text: string;
     imageUrl?: string;
     conditionType: ConditionType;
@@ -51,9 +57,12 @@ export function CaptureSheet({
   const [imageUrl, setImageUrl] = useState<string>();
   const [song, setSong] = useState<SongDto>();
   const [text, setText] = useState('');
-  const [recipientId, setRecipientId] = useState(presetRecipientId ?? 'me');
+  const [target, setTarget] = useState<{ kind: 'friend' | 'group'; id: string }>(() => ({
+    kind: 'friend',
+    id: presetRecipientId ?? 'me',
+  }));
   const [conditionType, setConditionType] = useState<ConditionType>('MANUAL');
-  const [conditionLabel, setConditionLabel] = useState('');
+  const [conditionLabel, setConditionLabel] = useState(presetConditionLabel ?? '');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,9 +73,17 @@ export function CaptureSheet({
   const libraryRef = useRef<HTMLInputElement | null>(null);
 
   const recipient = useMemo(
-    () => friends.find((friend) => friend.id === recipientId) ?? friends[0],
-    [friends, recipientId],
+    () => friends.find((friend) => friend.id === target.id) ?? friends[0],
+    [friends, target.id],
   );
+  const group = useMemo(
+    () => groups.find((item) => item.id === target.id),
+    [groups, target.id],
+  );
+  const targetLabel =
+    target.kind === 'group'
+      ? group?.name ?? 'the group'
+      : recipient?.displayName ?? 'them';
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +191,28 @@ export function CaptureSheet({
     setBusy(true);
     setError('');
     try {
+      if (target.kind === 'group') {
+        await onSubmit({
+          groupId: target.id,
+          text,
+          imageUrl,
+          conditionType: conditionType === 'TOGETHER' ? 'MANUAL' : conditionType,
+          conditionLabel:
+            conditionType === 'TOGETHER'
+              ? conditionLabel.trim() || 'Open when you’re all together'
+              : conditionType === 'MANUAL'
+                ? conditionLabel
+                : undefined,
+        });
+      } else {
+        await onSubmit({
+          recipientId: recipient?.isSelf ? 'me' : target.id,
+          text,
+          imageUrl,
+          conditionType,
+          conditionLabel: conditionType === 'MANUAL' ? conditionLabel : undefined,
+        });
+      }
       await onSubmit({
         recipientId: recipient?.isSelf ? 'me' : recipientId,
         text,
@@ -306,20 +345,44 @@ export function CaptureSheet({
         {step === 'recipient' ? (
           <>
             <h2>Who is this for?</h2>
+            {groups.length > 0 ? (
+              <>
+                <p className="hint">Groups</p>
+                <div className="choices">
+                  {groups.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`choice ${target.kind === 'group' && target.id === item.id ? 'active' : ''}`}
+                      onClick={() => {
+                        setTarget({ kind: 'group', id: item.id });
+                        setAdding(false);
+                        setStep('condition');
+                      }}
+                    >
+                      {item.name}
+                      <span className="choice-meta"> · {item.members.length} people</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            <p className="hint">Friends</p>
             <div className="choices">
               {friends.map((friend) => (
                 <button
                   key={friend.id}
                   type="button"
-                  className={`choice ${recipientId === friend.id || (friend.isSelf && recipientId === 'me') ? 'active' : ''}`}
+                  className={`choice ${target.kind === 'friend' && (target.id === friend.id || (friend.isSelf && target.id === 'me')) ? 'active' : ''}`}
                   onClick={() => {
-                    setRecipientId(friend.id);
+                    setTarget({ kind: 'friend', id: friend.id });
                     setAdding(false);
                     setStep('condition');
                   }}
                 >
                   {friend.displayName}
                   {friend.online ? ' · online' : ''}
+                  {friend.placeLabel ? ` · at ${friend.placeLabel}` : ''}
                 </button>
               ))}
               <button
@@ -341,14 +404,21 @@ export function CaptureSheet({
         {step === 'condition' ? (
           <>
             <h2>How does it open?</h2>
-            <p className="lede">For {recipient?.displayName ?? 'them'}.</p>
+            <p className="lede">For {targetLabel}.</p>
             <div className="choices">
               {(
-                [
-                  ['MANUAL', 'Open when…'],
-                  ['TOGETHER', 'Open together'],
-                  ['RECIPIENT_SET', 'You decide'],
-                ] as const
+                (
+                  target.kind === 'group'
+                    ? ([
+                        ['MANUAL', 'Open when…'],
+                        ['RECIPIENT_SET', 'They decide'],
+                      ] as const)
+                    : ([
+                        ['MANUAL', 'Open when…'],
+                        ['TOGETHER', 'Open together'],
+                        ['RECIPIENT_SET', 'You decide'],
+                      ] as const)
+                )
               ).map(([type, label]) => (
                 <button
                   key={type}
@@ -360,7 +430,7 @@ export function CaptureSheet({
                 </button>
               ))}
             </div>
-            {conditionType === 'MANUAL' ? (
+            {conditionType === 'MANUAL' || (target.kind === 'group' && conditionType === 'TOGETHER') ? (
               <label className="field">
                 Condition
                 <input
@@ -373,9 +443,14 @@ export function CaptureSheet({
               <p className="hint">
                 {conditionType === 'TOGETHER'
                   ? 'Both of you hold. The first wait is the point.'
-                  : 'They write the condition after it arrives.'}
+                  : target.kind === 'group'
+                    ? 'Each person writes their own condition after it arrives.'
+                    : 'They write the condition after it arrives.'}
               </p>
             )}
+            {target.kind === 'group' ? (
+              <p className="hint">Everyone in {targetLabel} gets their own card.</p>
+            ) : null}
             <button
               className="btn"
               type="button"

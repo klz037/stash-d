@@ -5,12 +5,19 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateLockDto {
+  @ValidateIf((body: CreateLockDto) => !body.groupId)
   @IsString()
   @IsNotEmpty()
-  recipientId!: string;
+  recipientId?: string;
+
+  @ValidateIf((body: CreateLockDto) => !body.recipientId)
+  @IsString()
+  @IsNotEmpty()
+  groupId?: string;
 
   @IsString()
   @MaxLength(2000)

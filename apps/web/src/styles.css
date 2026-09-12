@@ -481,6 +481,73 @@ button {
   margin-top: 10px;
 }
 
+.account .field .btn,
+.account .field .btn-ghost {
+  margin-top: 8px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toggle-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toggle-row small {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chip.active {
+  background: var(--ink);
+  color: #fffdf8;
+  border-color: var(--ink);
+}
+
+.group-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.group-list li {
+  display: grid;
+  gap: 2px;
+  font-size: 0.84rem;
+}
+
+.group-list span {
+  color: var(--ink-soft);
+}
+
+.choice-meta {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
 /* --- songs -------------------------------------------------------------- */
 
 /* The sealed state for a song: a record sleeve, never the real cover.

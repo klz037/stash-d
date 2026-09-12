@@ -82,6 +82,10 @@ export class FriendshipsService {
   }
 
   private toFriendDto(user: UserDocument, isSelf: boolean): FriendDto {
+    const locationFresh =
+      user.locationSharing &&
+      user.locationUpdatedAt &&
+      Date.now() - new Date(user.locationUpdatedAt).getTime() < 1000 * 60 * 45;
     return {
       id: user._id,
       displayName: isSelf ? 'Me' : user.displayName,
@@ -89,6 +93,14 @@ export class FriendshipsService {
       pairingCodeDisplay: formatPairingCode(user.pairingCode),
       picture: user.picture,
       isSelf,
+      schoolId: user.schoolId,
+      schoolName: user.schoolName,
+      city: user.city,
+      placeLabel: locationFresh ? user.placeLabel : undefined,
+      locationUpdatedAt:
+        locationFresh && user.locationUpdatedAt
+          ? new Date(user.locationUpdatedAt).toISOString()
+          : undefined,
     };
   }
 }

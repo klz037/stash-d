@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
+import { GroupsModule } from '../groups/groups.module';
 import { FriendshipsModule } from '../friendships/friendships.module';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { UsersModule } from '../users/users.module';
@@ -16,6 +17,7 @@ import { StashesService } from './stashes.service';
     UsersModule,
     SpotifyModule,
     FriendshipsModule,
+    GroupsModule,
     RealtimeModule,
   ],
   controllers: [StashesController],

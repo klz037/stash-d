@@ -36,6 +36,9 @@ export class User {
   @Prop({ required: true })
   displayName: string;
 
+  @Prop({ default: false })
+  displayNameCustomized: boolean;
+
   @Prop({ required: true, unique: true, uppercase: true })
   pairingCode: string;
 
@@ -57,6 +60,20 @@ export class User {
   @Prop()
   weeklyRitual?: string;
 
+  @Prop({ default: false })
+  locationSharing: boolean;
+
+  @Prop()
+  coarseLat?: number;
+
+  @Prop()
+  coarseLon?: number;
+
+  @Prop()
+  placeLabel?: string;
+
+  @Prop({ type: Date })
+  locationUpdatedAt?: Date;
   @Prop({ type: Object, default: null })
   spotify?: SpotifyTokens | null;
 

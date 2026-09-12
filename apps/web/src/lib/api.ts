@@ -1,9 +1,13 @@
 import type {
   CreateFriendNoteRequest,
+  CreateGroupRequest,
   CreateLockRequest,
   FriendDto,
   FriendNoteDto,
+  GroupDto,
+  JoinGroupRequest,
   LockDto,
+  UpdateLocationRequest,
   SongDto,
   SpotifyNowPlayingDto,
   SpotifyStatusDto,
@@ -29,19 +33,14 @@ async function request<T>(
     let message = 'Something went wrong.';
     try {
       const body = (await response.json()) as { message?: string | string[] };
-      if (Array.isArray(body.message)) {
-        message = body.message.join(' ');
-      } else if (body.message) {
-        message = body.message;
-      }
+      if (Array.isArray(body.message)) message = body.message.join(' ');
+      else if (body.message) message = body.message;
     } catch {
       message = response.statusText;
     }
     throw new Error(message);
   }
-  if (response.status === 204) {
-    return undefined as T;
-  }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
@@ -50,6 +49,11 @@ export const api = {
   updateProfile: (token: string, body: UpdateProfileRequest) =>
     request<UserDto>('/api/me', token, {
       method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  updateLocation: (token: string, body: UpdateLocationRequest) =>
+    request<UserDto>('/api/me/location', token, {
+      method: 'POST',
       body: JSON.stringify(body),
     }),
   friends: (token: string) => request<FriendDto[]>('/api/friends', token),
@@ -61,7 +65,7 @@ export const api = {
   inbox: (token: string) => request<LockDto[]>('/api/locks', token),
   sent: (token: string) => request<LockDto[]>('/api/locks/sent', token),
   createLock: (token: string, body: CreateLockRequest) =>
-    request<LockDto>('/api/locks', token, {
+    request<LockDto[]>('/api/locks', token, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
@@ -88,6 +92,17 @@ export const api = {
   notes: (token: string) => request<FriendNoteDto[]>('/api/notes', token),
   createNote: (token: string, body: CreateFriendNoteRequest) =>
     request<FriendNoteDto>('/api/notes', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  groups: (token: string) => request<GroupDto[]>('/api/groups', token),
+  createGroup: (token: string, body: CreateGroupRequest) =>
+    request<GroupDto>('/api/groups', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  joinGroup: (token: string, body: JoinGroupRequest) =>
+    request<GroupDto>('/api/groups/join', token, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
