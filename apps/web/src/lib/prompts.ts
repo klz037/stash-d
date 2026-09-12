@@ -193,9 +193,17 @@ export function buildPrompts(input: {
     // reliable reason to stash something, and it costs the user nothing.
     const friendSchool = schools.find((school) => school.id === friend.schoolId);
     if (friendSchool) {
-      for (const event of friendSchool.events) {
-        const delta = daysBetween(now, new Date(`${event.date}T12:00:00`));
-        if (delta < 0 || delta > 7) continue;
+      // Up to two things coming up on their campus in the next two weeks:
+      // breaks, finals, traditions. Soonest first.
+      let shown = 0;
+      const upcoming = friendSchool.events
+        .map((event) => ({ ...event, delta: daysBetween(now, new Date(`${event.date}T12:00:00`)) }))
+        .filter((event) => event.delta >= 0 && event.delta <= 14)
+        .sort((a, b) => a.delta - b.delta);
+      for (const event of upcoming) {
+        const { delta } = event;
+        if (shown >= 2) break;
+        shown += 1;
         const whenLabel = delta === 0 ? 'today' : delta === 1 ? 'tomorrow' : `in ${delta} days`;
         push({
           id: `fschool-${friend.id}-${event.date}`,
@@ -213,7 +221,6 @@ export function buildPrompts(input: {
           sourceUrl: friendSchool.sourceUrl,
           triggerKey: `fschool:${friend.id}:${event.date}`,
         });
-        break;
       }
     }
 

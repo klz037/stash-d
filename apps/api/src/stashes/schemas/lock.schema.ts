@@ -128,6 +128,12 @@ export class Lock {
   @Prop({ type: Date, default: null })
   unlockedAt: Date | null;
 
+  @Prop({ index: true })
+  groupId?: string;
+
+  @Prop()
+  groupName?: string;
+
   createdAt?: Date;
   updatedAt?: Date;
 }

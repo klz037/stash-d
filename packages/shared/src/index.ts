@@ -73,6 +73,8 @@ export interface UserDto {
    * Per session, not per user: read from the token, never stored.
    */
   mfa?: boolean;
+  /** Opt-in for device stash alerts (OS pop-ups, distinct from the shelf). */
+  stashAlertsEnabled?: boolean;
 }
 
 export interface FriendDto {
@@ -323,6 +325,75 @@ export interface UpdateProfileRequest {
   schoolName?: string;
   city?: string;
   weeklyRitual?: string;
+  stashAlertsEnabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Prompts + device alerts
+//
+// The shelf on the home screen is silent. Device alerts are the loud path:
+// OS pop-ups, capped per day, each about a *friend's* school, composed by
+// IFM (or a template when IFM is not configured).
+// ---------------------------------------------------------------------------
+
+export interface ComposePromptRequest {
+  schoolId: string;
+  schoolName: string;
+  cue: string;
+  emotion: 'athletics' | 'tradition' | 'food' | 'calendar' | 'weather' | 'place' | 'soft';
+  recipientName?: string;
+}
+
+export interface ComposePromptResponse {
+  title: string;
+  body: string;
+  cta: string;
+  source: 'ifm' | 'fallback';
+}
+
+export type StashAlertKind = 'athletics' | 'tradition' | 'food' | 'event' | 'news';
+
+export interface PushSubscriptionDto {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export interface StashAlertDto {
+  id: string;
+  title: string;
+  body: string;
+  kind: StashAlertKind;
+  friendId?: string;
+  friendName?: string;
+  schoolId?: string;
+  schoolName?: string;
+  sourceLabel?: string;
+  sourceUrl?: string;
+  suggestedCondition?: string;
+  createdAt: string;
+}
+
+export interface AlertPreviewDto {
+  /** Today's ceiling for this user (0 when there is nobody to stash for). */
+  dailyBudget: number;
+  sentToday: number;
+  friendCount: number;
+  groupCount: number;
+  /** What today's alerts would say. Nothing is stored or sent. */
+  alerts: StashAlertDto[];
+}
+
+export interface NotificationsStatusDto {
+  enabled: boolean;
+  pushConfigured: boolean;
+  vapidPublicKey?: string;
+  sentToday: number;
+  dailyBudget: number;
+  pending: StashAlertDto[];
 }
 
 export interface CreateFriendNoteRequest {

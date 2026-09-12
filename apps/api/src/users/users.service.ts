@@ -97,6 +97,7 @@ export class UsersService {
       city: user.city,
       weeklyRitual: user.weeklyRitual,
       spotifyConnected: Boolean(user.spotify?.refreshToken),
+      stashAlertsEnabled: Boolean(user.stashAlertsEnabled),
     };
   }
 
@@ -108,6 +109,7 @@ export class UsersService {
       schoolName?: string;
       city?: string;
       weeklyRitual?: string;
+      stashAlertsEnabled?: boolean;
     },
   ): Promise<UserDocument> {
     const name = patch.displayName?.trim();
@@ -119,8 +121,13 @@ export class UsersService {
     if (patch.schoolName !== undefined) user.schoolName = patch.schoolName || undefined;
     if (patch.city !== undefined) user.city = patch.city || undefined;
     if (patch.weeklyRitual !== undefined) user.weeklyRitual = patch.weeklyRitual || undefined;
+    if (patch.stashAlertsEnabled !== undefined) user.stashAlertsEnabled = patch.stashAlertsEnabled;
     await user.save();
     return user;
+  }
+
+  async listAlertOptIns(): Promise<UserDocument[]> {
+    return this.userModel.find({ stashAlertsEnabled: true }).exec();
   }
 
   /** Finds the user an in-flight Spotify connect belongs to. */

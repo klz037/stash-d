@@ -1,5 +1,5 @@
 {
-  "_note": "Dates for 2026-27. cmu, pitt and nyu fall 2026 dates were checked against the linked calendars on Sept 12 2026 (spring 2027 for those three is still approximate). Schools marked approximate: true follow each school's usual pattern; check sourceUrl before reading a date out loud. Add/drop deadlines are deliberately left out: every school has one in mid-September and it made the same prompt fire for everyone. athletics: UW and Pitt dates are from the linked 2026 schedules. quirks are campus things a friend can ask about.",
+  "_note": "Dates for 2026-27. cmu, pitt and nyu fall 2026 dates were checked against the linked calendars on Sept 12 2026 (spring 2027 for those three is still approximate). Schools marked approximate: true follow each school's usual pattern; check sourceUrl before reading a date out loud. Add/drop deadlines are deliberately left out: every school has one in mid-September and it made the same prompt fire for everyone. athletics: UW and Pitt dates are from the linked 2026 schedules. quirks are campus things a friend can ask about. Traditions (Carnival, Homecoming, Dawg Daze) are marked approximate on the event until the school publishes the date.",
   "schools": [
     {
       "id": "cmu",
@@ -10,6 +10,12 @@
       "sourceUrl": "https://www.cmu.edu/hub/calendar/",
       "events": [
         {
+          "date": "2026-09-19",
+          "label": "Tartan football home opener",
+          "kind": "milestone",
+          "approximate": true
+        },
+        {
           "date": "2026-10-12",
           "label": "fall break starts",
           "kind": "lull"
@@ -18,6 +24,17 @@
           "date": "2026-10-19",
           "label": "fall break ends",
           "kind": "stress"
+        },
+        {
+          "date": "2026-10-23",
+          "label": "Homecoming weekend",
+          "kind": "milestone",
+          "approximate": true
+        },
+        {
+          "date": "2026-10-30",
+          "label": "Halloween on the Cut",
+          "kind": "lull"
         },
         {
           "date": "2026-11-03",
@@ -60,6 +77,18 @@
           "kind": "lull"
         },
         {
+          "date": "2027-04-15",
+          "label": "Spring Carnival starts",
+          "kind": "milestone",
+          "approximate": true
+        },
+        {
+          "date": "2027-04-16",
+          "label": "Buggy races (Sweepstakes)",
+          "kind": "milestone",
+          "approximate": true
+        },
+        {
           "date": "2027-05-09",
           "label": "commencement weekend",
           "kind": "milestone"
@@ -72,8 +101,14 @@
       "quirks": [
         {
           "label": "the Fence",
-          "prompt": "What's painted on the Fence today?",
+          "prompt": "What's on the Fence today?",
           "condition": "Open when you walk past the Fence",
+          "sourceUrl": "https://www.cmu.edu/about/traditions.html"
+        },
+        {
+          "label": "Buggy",
+          "prompt": "Any buggies practicing on the hill this morning?",
+          "condition": "Open at the top of the Buggy course",
           "sourceUrl": "https://www.cmu.edu/about/traditions.html"
         },
         {
@@ -83,10 +118,16 @@
           "sourceUrl": "https://www.cmu.edu/about/traditions.html"
         },
         {
-          "label": "Scotty",
-          "prompt": "Seen Scotty around today?",
-          "condition": "Open when you see Scotty",
+          "label": "the Kiltie Band",
+          "prompt": "Did you hear the bagpipes today?",
+          "condition": "Open when the Kilties play",
           "sourceUrl": "https://www.cmu.edu/about/traditions.html"
+        },
+        {
+          "label": "Gates",
+          "prompt": "Which floor of Gates are you on?",
+          "condition": "Open when you're in Gates",
+          "sourceUrl": "https://www.cmu.edu/"
         }
       ]
     },
@@ -107,6 +148,17 @@
           "date": "2026-10-12",
           "label": "fall break ends",
           "kind": "stress"
+        },
+        {
+          "date": "2026-10-16",
+          "label": "Homecoming weekend",
+          "kind": "milestone",
+          "approximate": true
+        },
+        {
+          "date": "2026-11-13",
+          "label": "Pitt vs Florida State, Friday night",
+          "kind": "milestone"
         },
         {
           "date": "2026-11-22",
@@ -137,6 +189,12 @@
           "date": "2027-03-08",
           "label": "spring recess starts",
           "kind": "lull"
+        },
+        {
+          "date": "2027-04-10",
+          "label": "Pitt Make a Difference Day",
+          "kind": "milestone",
+          "approximate": true
         },
         {
           "date": "2027-04-30",
@@ -179,6 +237,18 @@
           "prompt": "Are the victory lights on tonight?",
           "condition": "Open when the Cathedral lights up",
           "sourceUrl": "https://www.pitt.edu/pittwire/features-articles/victory-lights-pitt-tradition"
+        },
+        {
+          "label": "the Pete",
+          "prompt": "Who did you run into at the Pete?",
+          "condition": "Open at the Pete",
+          "sourceUrl": "https://www.pitt.edu/"
+        },
+        {
+          "label": "Schenley Plaza",
+          "prompt": "Are the food trucks out at Schenley?",
+          "condition": "Open when you're at Schenley",
+          "sourceUrl": "https://www.pittsburghparks.org/park/schenley-park/"
         }
       ]
     },
@@ -191,8 +261,19 @@
       "sourceUrl": "https://www.nyu.edu/students/student-information-and-resources/registration-records-and-graduation/academic-calendar.html",
       "events": [
         {
+          "date": "2026-09-26",
+          "label": "Welcome Week block party",
+          "kind": "lull",
+          "approximate": true
+        },
+        {
           "date": "2026-10-12",
           "label": "fall break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-10-31",
+          "label": "Village Halloween Parade",
           "kind": "lull"
         },
         {
@@ -231,6 +312,12 @@
           "kind": "lull"
         },
         {
+          "date": "2027-04-17",
+          "label": "Strawberry Festival",
+          "kind": "milestone",
+          "approximate": true
+        },
+        {
           "date": "2027-05-04",
           "label": "last day of classes",
           "kind": "milestone"
@@ -257,6 +344,18 @@
           "prompt": "Which floor of Bobst are you hiding on?",
           "condition": "Open when you're in Bobst",
           "sourceUrl": "https://library.nyu.edu/locations/bobst-library/"
+        },
+        {
+          "label": "the Arch",
+          "prompt": "Did you walk under the Arch today?",
+          "condition": "Open under the Arch",
+          "sourceUrl": "https://www.nycgovparks.org/parks/washington-square-park"
+        },
+        {
+          "label": "Mamoun's",
+          "prompt": "Late-night Mamoun's tonight?",
+          "condition": "Open in line at Mamoun's",
+          "sourceUrl": "https://mamouns.com/"
         }
       ]
     },
@@ -1000,8 +1099,19 @@
       "sourceUrl": "https://www.washington.edu/students/reg/calendar.html",
       "events": [
         {
+          "date": "2026-09-26",
+          "label": "Dawg Daze ends",
+          "kind": "lull",
+          "approximate": true
+        },
+        {
           "date": "2026-09-30",
           "label": "autumn quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-10-10",
+          "label": "Homecoming vs Iowa",
           "kind": "milestone"
         },
         {
@@ -1043,6 +1153,12 @@
           "date": "2027-03-22",
           "label": "spring break starts",
           "kind": "lull"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "cherry blossoms peak on the Quad",
+          "kind": "lull",
+          "approximate": true
         },
         {
           "date": "2027-03-29",
@@ -1144,6 +1260,18 @@
           "prompt": "Is it slippery on Red Square yet?",
           "condition": "Open when you cross Red Square",
           "sourceUrl": "https://www.washington.edu/maps/"
+        },
+        {
+          "label": "Drumheller Fountain",
+          "prompt": "Can you see Rainier from the fountain today?",
+          "condition": "Open at Drumheller Fountain",
+          "sourceUrl": "https://www.washington.edu/maps/"
+        },
+        {
+          "label": "Suzzallo",
+          "prompt": "Did you get a seat in the reading room?",
+          "condition": "Open when you're in Suzzallo",
+          "sourceUrl": "https://www.lib.washington.edu/suzzallo"
         }
       ]
     },

@@ -1,15 +1,18 @@
 import {
+  AlertPreviewDto,
   CalendarDto,
   FriendDto,
   FriendRequestDto,
   GroupDto,
   LockDto,
+  NotificationsStatusDto,
   PromptDto,
   SOCKET_EVENTS,
   UserDto,
 } from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertPreview } from '../components/AlertPreview';
 import { CaptureSheet, Person } from '../components/CaptureSheet';
 import { Icon } from '../components/Icon';
 import { PairingCodeInput } from '../components/PairingCodeInput';
@@ -17,6 +20,12 @@ import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
+import {
+  disableStashAlerts,
+  enableStashAlerts,
+  pushSupported,
+  showLocalAlert,
+} from '../lib/notifications';
 import {
   buildPrompts,
   campusFor,
@@ -100,6 +109,11 @@ export function HomePage() {
   const [hereBusy, setHereBusy] = useState<string | null>(null);
   const [promptTick, setPromptTick] = useState(0);
   const [clockTick, setClockTick] = useState(0);
+  const [alertStatus, setAlertStatus] = useState<NotificationsStatusDto | null>(null);
+  const [alertBusy, setAlertBusy] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState<AlertPreviewDto | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
@@ -525,7 +539,115 @@ export function HomePage() {
     setCapturing(true);
   }
 
+  // ---- Device stash alerts (OS pop-ups; the shelf above stays silent) ----
+
+  const loadAlertStatus = useCallback(async () => {
+    try {
+      setAlertStatus(await api.notificationsStatus(tokenRef.current || (await token())));
+    } catch {
+      setAlertStatus(null);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!me) return;
+    void loadAlertStatus();
+  }, [me?.id, me?.stashAlertsEnabled, loadAlertStatus]);
+
+  async function toggleStashAlerts() {
+    if (alertBusy) return;
+    setAlertBusy(true);
+    try {
+      const access = tokenRef.current || (await token());
+      if (me?.stashAlertsEnabled) {
+        await disableStashAlerts(access);
+        setMe((current) => (current ? { ...current, stashAlertsEnabled: false } : current));
+        toast('Stash alerts off.');
+      } else {
+        const status = await enableStashAlerts(access);
+        setAlertStatus(status);
+        setMe((current) => (current ? { ...current, stashAlertsEnabled: true } : current));
+        toast(
+          status.pushConfigured
+            ? `Alerts on — at most ${status.dailyBudget} a day.`
+            : 'Alerts on for this device while stash\u2019d is open.',
+        );
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not change alerts.');
+    } finally {
+      setAlertBusy(false);
+    }
+  }
+
+  const loadPreview = useCallback(async () => {
+    setPreviewLoading(true);
+    try {
+      setPreview(await api.previewAlerts(tokenRef.current || (await token())));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not build a preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [token, toast]);
+
+  function openPreview() {
+    setPreviewOpen(true);
+    setMenu('none');
+    void loadPreview();
+  }
+
+  async function sendTestAlert() {
+    if (alertBusy) return;
+    setAlertBusy(true);
+    try {
+      const access = tokenRef.current || (await token());
+      const sentAlert = await api.sendAlertNow(access);
+      if (!sentAlert) {
+        toast('Budget spent for today, or no friend has a school set.');
+      } else {
+        if (!alertStatus?.pushConfigured) {
+          await showLocalAlert(sentAlert);
+        }
+        toast(`Sent: ${sentAlert.title}`);
+      }
+      await loadAlertStatus();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not send an alert.');
+    } finally {
+      setAlertBusy(false);
+    }
+  }
+
   const viewerId = me?.id ?? authUser?.sub ?? '';
+
+  // A tapped device alert lands here with ?stashFor=<friendId>; ?preview=alerts opens the demo sheet.
+  useEffect(() => {
+    if (!me) return;
+    const params = new URLSearchParams(window.location.search);
+    const stashFor = params.get('stashFor');
+    const wantsPreview = params.get('preview') === 'alerts';
+    if (!stashFor && !wantsPreview) return;
+    if (stashFor) {
+      openCapture(stashFor);
+      const alertId = params.get('alert');
+      if (alertId) {
+        void (async () => {
+          try {
+            await api.ackAlert(tokenRef.current || (await token()), alertId);
+          } catch {
+            // Acking is best-effort.
+          }
+        })();
+      }
+    }
+    if (wantsPreview) {
+      setPreviewOpen(true);
+      void loadPreview();
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.id]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('spotify');
@@ -607,7 +729,7 @@ export function HomePage() {
     return [
       ...skyPrompts,
       ...buildPrompts({ me, friends, inbox, sent, weather, calendar: calendar?.events }),
-    ].slice(0, 5);
+    ].slice(0, 8);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, friends, inbox, sent, mySky, skyPrompts, calendar, promptTick]);
 
@@ -962,6 +1084,39 @@ export function HomePage() {
             <strong>{me.pairingCodeDisplay}</strong>
             {copyButton('invite-profile', inviteLink, 'Copy invite link')}
           </div>
+
+          <div className="field alerts-row">
+            <span>
+              Stash alerts
+              <span className="hint">
+                {pushSupported()
+                  ? 'Device pop-ups about your friends\u2019 campuses. Max 3\u20134 a day, never overnight.'
+                  : 'Add stash\u2019d to your home screen to get device alerts.'}
+              </span>
+            </span>
+            <button
+              className="btn-ghost"
+              type="button"
+              disabled={alertBusy}
+              onClick={() => void toggleStashAlerts()}
+            >
+              {me.stashAlertsEnabled ? 'On' : 'Off'}
+            </button>
+          </div>
+          {me.stashAlertsEnabled && alertStatus ? (
+            <p className="hint">
+              {alertStatus.sentToday}/{alertStatus.dailyBudget} today
+              {alertStatus.pushConfigured ? '' : ' \u00b7 push not configured on server'}
+              {' \u00b7 '}
+              <button className="link" type="button" disabled={alertBusy} onClick={() => void sendTestAlert()}>
+                send one now
+              </button>
+            </p>
+          ) : null}
+          <button className="btn-ghost" type="button" style={{ marginBottom: 10 }} onClick={openPreview}>
+            Preview today's alerts
+          </button>
+
           <button
             className="btn-ghost"
             type="button"
@@ -978,6 +1133,14 @@ export function HomePage() {
       {alert && !capturing ? (
         <div className="alert-sheet" role="dialog" aria-modal="true">
           <div className="alert-card">
+            <button
+              className="alert-close"
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => dropAlert(alert.id)}
+            >
+              ×
+            </button>
             {alert.kind === 'request' ? (
               <>
                 <span className="avatar">
@@ -997,9 +1160,6 @@ export function HomePage() {
                 <button className="btn" type="button" onClick={() => void answerRequest(alert.request, true)}>
                   Accept
                 </button>
-                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
-                  Later
-                </button>
               </>
             ) : alert.kind === 'opening' ? (
               <>
@@ -1010,9 +1170,6 @@ export function HomePage() {
                 <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
                   Open together
                 </button>
-                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
-                  Not now
-                </button>
               </>
             ) : (
               <>
@@ -1020,9 +1177,6 @@ export function HomePage() {
                 <p className="lede">Yours is still sealed. Take a look when you're ready.</p>
                 <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
                   Take a look
-                </button>
-                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
-                  Later
                 </button>
               </>
             )}
@@ -1231,6 +1385,30 @@ export function HomePage() {
         </div>
       ) : null}
 
+      {previewOpen ? (
+        <AlertPreview
+          preview={preview}
+          loading={previewLoading}
+          pushConfigured={Boolean(alertStatus?.pushConfigured)}
+          onClose={() => setPreviewOpen(false)}
+          onRefresh={() => void loadPreview()}
+          onPop={(item) => {
+            void showLocalAlert(item).then((shown) => {
+              toast(
+                shown
+                  ? 'Check your notification center.'
+                  : 'Allow notifications for this site to see the pop-up.',
+              );
+            });
+          }}
+          onSendReal={() => void sendTestAlert()}
+          onStash={(item) => {
+            setPreviewOpen(false);
+            openCapture(item.friendId);
+          }}
+        />
+      ) : null}
+
       {capturing ? (
         <CaptureSheet
           friends={friends}
@@ -1238,7 +1416,7 @@ export function HomePage() {
           people={people}
           skies={skies}
           knownMoments={knownMoments}
-          eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 14).slice(0, 2)}
+          eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 21).slice(0, 3)}
           campusFor={(schoolId) => campusFor(schoolId)}
           token={token}
           presetRecipientId={replyTo}
