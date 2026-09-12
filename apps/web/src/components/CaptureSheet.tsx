@@ -11,10 +11,12 @@ import {
 } from '@stashd/shared';
 import { SongPicker } from './SongPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Campus } from '../lib/prompts';
 import { suggestConditions, SkyMap } from '../lib/sky';
 import { describeSky, localClock, Sky } from '../lib/weather';
 
-type Step = 'media' | 'song' | 'text' | 'recipient' | 'condition' | 'review';
+/** capture → write → who → their details → how it opens → stash */
+type Step = 'media' | 'song' | 'text' | 'recipient' | 'review' | 'condition';
 
 /** Anyone you can stash to: a paired friend or someone in one of your groups. */
 export type Person = {
@@ -68,6 +70,7 @@ export function CaptureSheet({
   people,
   skies,
   eventsFor,
+  campusFor,
   presetRecipientId,
   token,
   onClose,
@@ -78,6 +81,7 @@ export function CaptureSheet({
   people: Record<string, Person>;
   skies: SkyMap;
   eventsFor: (schoolId: string) => UpcomingEvent[];
+  campusFor: (schoolId: string | undefined) => Campus | null;
   presetRecipientId?: string;
   token: () => Promise<string>;
   onClose: () => void;
@@ -133,7 +137,19 @@ export function CaptureSheet({
         .filter((sky): sky is Sky => Boolean(sky)),
     [recipients, skies],
   );
-  const suggestions = useMemo(() => suggestConditions(recipientSkies), [recipientSkies]);
+  // Sky first (it's happening now), then campus places, capped so the chips stay a row or two.
+  const suggestions = useMemo(() => {
+    const out = suggestConditions(recipientSkies);
+    const seen = new Set<string>();
+    for (const p of recipients) {
+      if (!p.schoolId || seen.has(p.schoolId)) continue;
+      seen.add(p.schoolId);
+      for (const quirk of campusFor(p.schoolId)?.quirks ?? []) {
+        if (!out.includes(quirk.condition)) out.push(quirk.condition);
+      }
+    }
+    return out.slice(0, 6);
+  }, [recipientSkies, recipients, campusFor]);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +271,6 @@ export function CaptureSheet({
     });
   }
 
-  /** A group's other members, as recipient ids. */
   function groupIds(group: GroupDto) {
     return group.memberIds.filter((id) => !people[id]?.isSelf);
   }
@@ -303,8 +318,10 @@ export function CaptureSheet({
     return undefined;
   }
 
-  const conditionReady =
-    recipientIds.length > 0 && (conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
+  const canStash =
+    !busy &&
+    recipientIds.length > 0 &&
+    (conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
 
   async function finish() {
     setBusy(true);
@@ -325,14 +342,11 @@ export function CaptureSheet({
     }
   }
 
-  const summary =
-    conditionType === 'RECIPIENT_SET'
-      ? 'They write the condition after it arrives.'
-      : conditionType === 'TOGETHER'
-        ? `${labelFor('TOGETHER') ?? 'Open together'}. ${
-            isGroup ? 'Everyone holds; the last hand opens it.' : 'Both of you hold.'
-          }`
-        : `“${labelFor('MANUAL')}”`;
+  const sendLabel = busy
+    ? 'Stashing…'
+    : recipients.length === 1
+      ? `Stash for ${recipients[0].isSelf ? 'myself' : recipients[0].displayName}`
+      : `Stash for ${recipients.length} people`;
 
   return (
     <div className="sheet" role="dialog" aria-modal="true">
@@ -488,16 +502,69 @@ export function CaptureSheet({
             </div>
             {adding ? (
               <p className="hint">
-                Pair with a code on the empty Stash, or join a group from your profile menu.
+                Pair with a code on the empty Stash, or join a group from the menu.
               </p>
             ) : null}
             <button
               className="btn"
               type="button"
               disabled={recipientIds.length === 0}
-              onClick={() => setStep('condition')}
+              onClick={() => setStep('review')}
             >
               {recipients.length > 1 ? `Next · ${recipients.length} people` : 'Next'}
+            </button>
+          </>
+        ) : null}
+
+        {step === 'review' ? (
+          <>
+            <h2>{recipients.length === 1 ? `About ${whoLabel}` : `About ${recipients.length} people`}</h2>
+            <p className="lede">What's going on where they are, before you pick when this opens.</p>
+            {recipients.map((person) => {
+              const sky = person.schoolId ? skies[person.schoolId] : undefined;
+              const events = person.schoolId ? eventsFor(person.schoolId) : [];
+              const campus = campusFor(person.schoolId);
+              return (
+                <div className="review-card" key={person.id}>
+                  <span className="avatar">
+                    {person.picture ? <img src={person.picture} alt="" /> : initial(person.displayName)}
+                  </span>
+                  <div>
+                    <strong>{person.isSelf ? 'You' : person.displayName}</strong>
+                    <small>
+                      {person.schoolName
+                        ? `${person.schoolName} · ${person.city ?? ''}`
+                        : 'No school set'}
+                    </small>
+                    {sky ? (
+                      <small>
+                        {describeSky(sky)} · {localClock(sky.timezone)} their time
+                      </small>
+                    ) : null}
+                    {events.map((event) => (
+                      <small key={event.date}>
+                        {event.label} {whenLabel(event.daysAway)}
+                      </small>
+                    ))}
+                    {campus?.nextGame && campus.mascot ? (
+                      <small>
+                        {campus.mascot}: {campus.nextGame.label} {whenLabel(campus.nextGame.daysAway)}
+                      </small>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+            <button className="btn" type="button" onClick={() => setStep('condition')}>
+              Pick when it opens
+            </button>
+            <button
+              className="btn-ghost"
+              type="button"
+              style={{ marginTop: 8 }}
+              onClick={() => setStep('recipient')}
+            >
+              Back
             </button>
           </>
         ) : null}
@@ -536,7 +603,7 @@ export function CaptureSheet({
                 />
                 {suggestions.length > 0 ? (
                   <>
-                    <span className="hint">From their sky right now</span>
+                    <span className="hint">From where they are right now</span>
                     <div className="chips">
                       {suggestions.map((label) => (
                         <button
@@ -581,65 +648,14 @@ export function CaptureSheet({
                 </p>
               </div>
             ) : null}
-            <button
-              className="btn"
-              type="button"
-              disabled={!conditionReady}
-              onClick={() => setStep('review')}
-            >
-              Review
-            </button>
-          </>
-        ) : null}
-
-        {step === 'review' ? (
-          <>
-            <h2>Sending to {whoLabel}</h2>
-            {recipients.map((person) => {
-              const sky = person.schoolId ? skies[person.schoolId] : undefined;
-              const events = person.schoolId ? eventsFor(person.schoolId) : [];
-              return (
-                <div className="review-card" key={person.id}>
-                  <span className="avatar">
-                    {person.picture ? <img src={person.picture} alt="" /> : initial(person.displayName)}
-                  </span>
-                  <div>
-                    <strong>{person.isSelf ? 'You' : person.displayName}</strong>
-                    <small>
-                      {person.schoolName
-                        ? `${person.schoolName} · ${person.city ?? ''}`
-                        : 'No school set'}
-                    </small>
-                    {sky ? (
-                      <small>
-                        {describeSky(sky)} · {localClock(sky.timezone)} their time
-                      </small>
-                    ) : null}
-                    {events.map((event) => (
-                      <small key={event.date}>
-                        {event.label} {whenLabel(event.daysAway)}
-                      </small>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-            <p className="lede review-summary">{summary}</p>
-            {context ? (
-              <p className="hint">Tied to {CONTEXT_LABELS[context]}.</p>
-            ) : null}
-            <button className="btn" type="button" disabled={busy} onClick={() => void finish()}>
-              {busy
-                ? 'Stashing…'
-                : recipients.length === 1
-                  ? `Send to ${recipients[0].isSelf ? 'myself' : recipients[0].displayName}`
-                  : `Send to ${recipients.length} people`}
+            <button className="btn" type="button" disabled={!canStash} onClick={() => void finish()}>
+              {sendLabel}
             </button>
             <button
               className="btn-ghost"
               type="button"
               style={{ marginTop: 8 }}
-              onClick={() => setStep('condition')}
+              onClick={() => setStep('review')}
             >
               Back
             </button>

@@ -14,6 +14,11 @@ type SchoolEvent = {
   kind: 'stress' | 'lull' | 'milestone';
 };
 
+type Game = { date: string; label: string; sport: string; home: boolean };
+
+/** A campus thing a friend can ask about: the Fence, the Cathedral, the Quad. */
+export type Quirk = { label: string; prompt: string; condition: string; sourceUrl: string };
+
 type School = {
   id: string;
   name: string;
@@ -22,7 +27,42 @@ type School = {
   lon: number;
   sourceUrl: string;
   events: SchoolEvent[];
+  mascot?: string;
+  teams?: string;
+  athleticsUrl?: string;
+  athletics?: Game[];
+  quirks?: Quirk[];
 };
+
+export type Campus = {
+  id: string;
+  name: string;
+  city: string;
+  mascot?: string;
+  teams?: string;
+  quirks: Quirk[];
+  /** Next game within two weeks, if the school has a schedule loaded. */
+  nextGame: (Game & { daysAway: number }) | null;
+};
+
+/** Everything the review card and the condition chips want to know about a school. */
+export function campusFor(schoolId: string | undefined, now = new Date()): Campus | null {
+  const school = schools.find((item) => item.id === schoolId);
+  if (!school) return null;
+  const games = (school.athletics ?? [])
+    .map((game) => ({ ...game, daysAway: daysBetween(now, new Date(`${game.date}T12:00:00`)) }))
+    .filter((game) => game.daysAway >= 0 && game.daysAway <= 14)
+    .sort((a, b) => a.daysAway - b.daysAway);
+  return {
+    id: school.id,
+    name: school.name,
+    city: school.city,
+    mascot: school.mascot,
+    teams: school.teams,
+    quirks: school.quirks ?? [],
+    nextGame: games[0] ?? null,
+  };
+}
 
 const schools = calendarData.schools as School[];
 
@@ -174,6 +214,44 @@ export function buildPrompts(input: {
           triggerKey: `fschool:${friend.id}:${event.date}`,
         });
         break;
+      }
+    }
+
+    // Game day at their school. "Good luck to the Huskies today."
+    if (friendSchool) {
+      const campus = campusFor(friendSchool.id, now);
+      const game = campus?.nextGame;
+      if (game && game.daysAway <= 1 && campus?.mascot) {
+        push({
+          id: `game-${friend.id}-${game.date}`,
+          kind: 'tier1',
+          emotion: 'milestone',
+          title: `Good luck to the ${campus.mascot} ${game.daysAway === 0 ? 'today' : 'tomorrow'}!`,
+          body: `${game.label}${game.home ? ', at home' : ''}. Stash something ${friend.displayName} opens after the game.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          sourceUrl: friendSchool.athleticsUrl,
+          triggerKey: `game:${friend.id}:${game.date}`,
+        });
+      }
+
+      // A campus thing to ask about. One per friend, rotating by day so the
+      // Fence isn't every day.
+      const quirks = campus?.quirks ?? [];
+      if (quirks.length > 0) {
+        const dayIndex = Math.floor(now.getTime() / 86_400_000);
+        const quirk = quirks[dayIndex % quirks.length];
+        push({
+          id: `quirk-${friend.id}-${quirk.label}`,
+          kind: 'tier1',
+          emotion: 'memory',
+          title: quirk.prompt,
+          body: `Ask ${friend.displayName} for a picture of ${quirk.label}, or stash one that opens there.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          sourceUrl: quirk.sourceUrl,
+          triggerKey: `quirk:${friend.id}:${quirk.label}:${dayStamp(now)}`,
+        });
       }
     }
 

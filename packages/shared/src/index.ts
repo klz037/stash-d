@@ -328,7 +328,17 @@ export interface SpotifyNowPlayingDto {
   /** Null when nothing is playing right now — fall back to `recent`. */
   current: SongDto | null;
   recent: SongDto[];
+  /**
+   * Why the lists are empty when they shouldn't be. The common one: the
+   * Spotify app is in development mode and this listener isn't on its
+   * allow list, so Spotify answers 403 for everything about them.
+   */
+  reason?: string;
 }
+
+/** Shown when Spotify refuses a listener the app hasn't allow-listed. */
+export const SPOTIFY_NOT_ALLOWED =
+  "Spotify is refusing this account. While the app is in development mode, each listener's Spotify email has to be added under User Management in the Spotify developer dashboard.";
 
 export interface ResolveSongRequest {
   /** A spotify.com track link, or a spotify:track:... URI. */

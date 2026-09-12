@@ -20,6 +20,7 @@ import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
 import {
   buildPrompts,
+  campusFor,
   dismissPrompt,
   SCHOOL_OPTIONS,
   schoolEventsFor,
@@ -30,6 +31,13 @@ import { connectRealtime, disconnectRealtime } from '../lib/socket';
 import { describeSky, fetchSky, localClock, Sky } from '../lib/weather';
 
 const NOTIFIED_KEY = 'stashd.skyNotified';
+
+/** Which menu is open. Only one at a time. */
+type Menu = 'none' | 'more' | 'profile';
+/** Inside the ☰ menu: the root list, or one of its screens. */
+type MoreView = 'root' | 'create' | 'join' | 'created' | 'list';
+/** What the feed shows: everything, one group, or one pair. */
+type Scope = { kind: 'all' } | { kind: 'group'; id: string } | { kind: 'pair'; id: string };
 
 function upsertLock(list: LockDto[], next: LockDto) {
   const index = list.findIndex((item) => item.id === next.id);
@@ -63,15 +71,18 @@ export function HomePage() {
   const [calendar, setCalendar] = useState<CalendarDto | null>(null);
   const [skies, setSkies] = useState<SkyMap>({});
   const [showSent, setShowSent] = useState(false);
+  const [scope, setScope] = useState<Scope>({ kind: 'all' });
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
   const [pairError, setPairError] = useState('');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menu, setMenu] = useState<Menu>('none');
+  const [moreView, setMoreView] = useState<MoreView>('root');
   const [nameDraft, setNameDraft] = useState('');
   const [groupName, setGroupName] = useState('');
   const [groupCode, setGroupCode] = useState('');
   const [groupBusy, setGroupBusy] = useState(false);
+  const [createdGroup, setCreatedGroup] = useState<GroupDto | null>(null);
   const [hereBusy, setHereBusy] = useState<LockContext | null>(null);
   const [promptTick, setPromptTick] = useState(0);
   const [clockTick, setClockTick] = useState(0);
@@ -116,7 +127,6 @@ export function HomePage() {
     setInbox(incoming);
     setSent(outgoing);
     await loadGroups();
-    // Calendar rides on Auth0 Token Vault. Unavailable is a normal answer.
     try {
       setCalendar(await api.calendar(access));
     } catch {
@@ -212,7 +222,6 @@ export function HomePage() {
     return () => window.clearInterval(id);
   }, [inbox, sent]);
 
-  // Everyone you can stash to: paired friends plus group members.
   const people = useMemo(() => {
     const map: Record<string, Person> = {};
     for (const friend of friends) {
@@ -243,7 +252,6 @@ export function HomePage() {
     return map;
   }, [friends, groups, me]);
 
-  // A sky for every school anyone we know is at. Refreshed every ten minutes.
   useEffect(() => {
     const ids = new Set<string>();
     if (me?.schoolId) ids.add(me.schoolId);
@@ -343,8 +351,9 @@ export function HomePage() {
         memberIds: friends.filter((friend) => !friend.isSelf).map((friend) => friend.id),
       });
       setGroupName('');
+      setCreatedGroup(group);
+      setMoreView('created');
       await loadGroups();
-      toast(`${group.name} · code ${group.inviteCodeDisplay}`);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not create the group.');
     } finally {
@@ -361,6 +370,8 @@ export function HomePage() {
       setGroupCode('');
       await loadGroups();
       toast(`You're in ${group.name}.`);
+      setScope({ kind: 'group', id: group.id });
+      setMenu('none');
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not join.');
     } finally {
@@ -392,6 +403,11 @@ export function HomePage() {
     }
   }
 
+  function openMenu(next: Menu) {
+    setMenu((current) => (current === next ? 'none' : next));
+    setMoreView('root');
+  }
+
   const viewerId = me?.id ?? authUser?.sub ?? '';
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -404,7 +420,9 @@ export function HomePage() {
         ? 'Spotify connected.'
         : result === 'declined'
           ? 'Spotify stays disconnected.'
-          : 'Could not connect Spotify. Try again.',
+          : result === 'notallowed'
+            ? 'Spotify refused this account. Add your Spotify email to the app in the Spotify developer dashboard, then connect again.'
+            : 'Could not connect Spotify. Try again.',
     );
     if (result === 'connected') {
       void refresh();
@@ -412,11 +430,27 @@ export function HomePage() {
     window.history.replaceState({}, document.title, window.location.pathname);
   }, [refresh, toast]);
 
-  const empty = inbox.length === 0;
-  const sortedInbox = useMemo(
-    () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [inbox],
+  const paired = friends.filter((friend) => !friend.isSelf);
+
+  // Scope: everything, one group (every participant is a member), or one pair.
+  const inScope = useCallback(
+    (lock: LockDto) => {
+      if (scope.kind === 'all') return true;
+      if (scope.kind === 'pair') return lock.participantIds.includes(scope.id);
+      const group = groups.find((item) => item.id === scope.id);
+      if (!group) return true;
+      return lock.participantIds.every((id) => group.memberIds.includes(id));
+    },
+    [scope, groups],
   );
+  const scopedInbox = useMemo(
+    () =>
+      inbox.filter(inScope).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [inbox, inScope],
+  );
+  const scopedSent = useMemo(() => sent.filter(inScope), [sent, inScope]);
+  const empty = inbox.length === 0;
+
   const waitingContexts = useMemo(
     () =>
       new Set(
@@ -466,7 +500,8 @@ export function HomePage() {
 
   const school = schoolLocation(me?.schoolId);
   const needsName = Boolean(me && !me.displayNameSet);
-  const paired = friends.filter((friend) => !friend.isSelf);
+  const scopeValue =
+    scope.kind === 'all' ? 'all' : `${scope.kind}:${scope.id}`;
 
   const nameForm = (
     <form
@@ -498,17 +533,192 @@ export function HomePage() {
         <span className="wordmark">
           stash<span>'d</span>
         </span>
-        <button
-          className="avatar"
-          type="button"
-          aria-label="Profile and groups"
-          onClick={() => setMenuOpen((value) => !value)}
-        >
-          {me?.picture ? <img src={me.picture} alt="" /> : initial(me?.displayName ?? '?')}
-        </button>
+        <div className="topbar-actions">
+          <button
+            className={`icon-btn ${menu === 'more' ? 'active' : ''}`}
+            type="button"
+            aria-label="Groups and pairs"
+            onClick={() => openMenu('more')}
+          >
+            <span className="burger" aria-hidden="true" />
+          </button>
+          <button
+            className={`avatar ${menu === 'profile' ? 'active' : ''}`}
+            type="button"
+            aria-label="Profile"
+            onClick={() => openMenu('profile')}
+          >
+            {me?.picture ? <img src={me.picture} alt="" /> : initial(me?.displayName ?? '?')}
+          </button>
+        </div>
       </div>
 
-      {menuOpen && me ? (
+      {menu === 'more' && me ? (
+        <div className="menu">
+          {moreView === 'root' ? (
+            <>
+              <button className="menu-item" type="button" onClick={() => setMoreView('create')}>
+                Create a group <span aria-hidden="true">›</span>
+              </button>
+              <button className="menu-item" type="button" onClick={() => setMoreView('join')}>
+                Join a group <span aria-hidden="true">›</span>
+              </button>
+              <button className="menu-item" type="button" onClick={() => setMoreView('list')}>
+                Groups &amp; pairs
+                <span className="menu-count">{groups.length + paired.length}</span>
+              </button>
+            </>
+          ) : null}
+
+          {moreView === 'create' ? (
+            <form
+              className="field"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createGroup();
+              }}
+            >
+              <span>Name the group</span>
+              <input
+                value={groupName}
+                maxLength={40}
+                autoFocus
+                onChange={(event) => setGroupName(event.target.value)}
+                placeholder="the apartment"
+              />
+              <span className="hint">
+                {paired.length > 0
+                  ? `Starts with you and the ${paired.length} ${paired.length === 1 ? 'person' : 'people'} you're paired with. Anyone else joins with the code.`
+                  : 'You get a code. Anyone with it can join.'}
+              </span>
+              <button className="btn" type="submit" disabled={groupBusy || !groupName.trim()}>
+                Create
+              </button>
+              <button className="btn-ghost" type="button" onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {moreView === 'created' && createdGroup ? (
+            <div className="code-block" style={{ margin: 0 }}>
+              <div>{createdGroup.name}</div>
+              <strong>{createdGroup.inviteCodeDisplay}</strong>
+              <p className="hint">Anyone who types this joins the group.</p>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(createdGroup.inviteCode);
+                  toast('Code copied.');
+                }}
+              >
+                Copy code
+              </button>
+              <button
+                className="btn-ghost"
+                type="button"
+                style={{ marginTop: 8 }}
+                onClick={() => {
+                  setScope({ kind: 'group', id: createdGroup.id });
+                  setMenu('none');
+                }}
+              >
+                Done
+              </button>
+            </div>
+          ) : null}
+
+          {moreView === 'join' ? (
+            <form
+              className="field"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void joinGroup();
+              }}
+            >
+              <span>Enter a group code</span>
+              <input
+                value={groupCode}
+                maxLength={7}
+                autoFocus
+                onChange={(event) => setGroupCode(event.target.value.toUpperCase())}
+                placeholder="KRF-2M9"
+                autoCapitalize="characters"
+              />
+              <button className="btn" type="submit" disabled={groupBusy || !groupCode.trim()}>
+                Join
+              </button>
+              <button className="btn-ghost" type="button" onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {moreView === 'list' ? (
+            <>
+              <h4>Groups</h4>
+              {groups.length === 0 ? (
+                <p className="hint">None yet.</p>
+              ) : (
+                groups.map((group) => (
+                  <div className="menu-row" key={group.id}>
+                    <button
+                      type="button"
+                      className="menu-link"
+                      onClick={() => {
+                        setScope({ kind: 'group', id: group.id });
+                        setMenu('none');
+                      }}
+                    >
+                      {group.name}
+                      <small>{group.members.map((m) => m.displayName).join(', ')}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="chip"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(group.inviteCode);
+                        toast(`${group.name}: ${group.inviteCodeDisplay} copied.`);
+                      }}
+                    >
+                      {group.inviteCodeDisplay}
+                    </button>
+                  </div>
+                ))
+              )}
+              <h4>Pairs</h4>
+              {paired.length === 0 ? (
+                <p className="hint">Nobody yet. Your code is in your profile.</p>
+              ) : (
+                paired.map((friend) => (
+                  <div className="menu-row" key={friend.id}>
+                    <button
+                      type="button"
+                      className="menu-link"
+                      onClick={() => {
+                        setScope({ kind: 'pair', id: friend.id });
+                        setMenu('none');
+                      }}
+                    >
+                      {friend.displayName}
+                      <small>{friend.schoolName ?? friend.city ?? 'No school yet'}</small>
+                    </button>
+                    <span className="avatar small">
+                      {friend.picture ? <img src={friend.picture} alt="" /> : initial(friend.displayName)}
+                    </span>
+                  </div>
+                ))
+              )}
+              <button className="btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {menu === 'profile' && me ? (
         <div className="menu">
           <div className="menu-profile">
             <span className="avatar">
@@ -516,11 +726,12 @@ export function HomePage() {
             </span>
             <div>
               <strong>{me.displayName}</strong>
-              <small>
-                {school ? `${school.name} · ${school.city}` : 'No school yet'}
-                {mySky ? ` · ${describeSky(mySky)} · ${localClock(mySky.timezone)}` : ''}
-              </small>
-              <small>Your code {me.pairingCodeDisplay}</small>
+              <small>{school ? `${school.name} · ${school.city}` : 'No school yet'}</small>
+              {mySky ? (
+                <small>
+                  {describeSky(mySky)} · {localClock(mySky.timezone)}
+                </small>
+              ) : null}
             </div>
           </div>
           {nameForm}
@@ -549,83 +760,25 @@ export function HomePage() {
                 : ''}
             </p>
           ) : null}
-
-          <h4>Paired with</h4>
-          {paired.length === 0 ? (
-            <p className="hint">Nobody yet. Your code is above.</p>
-          ) : (
-            paired.map((friend) => (
-              <div className="menu-row" key={friend.id}>
-                <span>
-                  {friend.displayName}
-                  <small>{friend.city ?? 'No school yet'}</small>
-                </span>
-                <span className="avatar small">
-                  {friend.picture ? <img src={friend.picture} alt="" /> : initial(friend.displayName)}
-                </span>
-              </div>
-            ))
-          )}
-
-          <h4>Groups</h4>
-          {groups.length === 0 ? (
-            <p className="hint">None yet. Make one or join with a code.</p>
-          ) : (
-            groups.map((group) => (
-              <div className="menu-row" key={group.id}>
-                <span>
-                  {group.name}
-                  <small>
-                    {group.members.length} {group.members.length === 1 ? 'person' : 'people'} ·{' '}
-                    {group.members.map((m) => m.displayName).join(', ')}
-                  </small>
-                </span>
-                <code>{group.inviteCodeDisplay}</code>
-              </div>
-            ))
-          )}
-          <form
-            className="field"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createGroup();
-            }}
-          >
-            <span>Create a group</span>
-            <input
-              value={groupName}
-              maxLength={40}
-              onChange={(event) => setGroupName(event.target.value)}
-              placeholder="the apartment"
-            />
-            <button className="btn" type="submit" disabled={groupBusy || !groupName.trim()}>
-              Create{paired.length > 0 ? ` with ${paired.length} paired` : ''}
+          <div className="code-block" style={{ margin: '12px 0' }}>
+            <div>Your code</div>
+            <strong>{me.pairingCodeDisplay}</strong>
+            <button
+              className="btn-ghost"
+              type="button"
+              onClick={() => {
+                void navigator.clipboard.writeText(
+                  `${window.location.origin}/pair/${me.pairingCode}`,
+                );
+                toast('Invite link copied.');
+              }}
+            >
+              Copy invite link
             </button>
-          </form>
-          <form
-            className="field"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void joinGroup();
-            }}
-          >
-            <span>Join a group</span>
-            <input
-              value={groupCode}
-              maxLength={7}
-              onChange={(event) => setGroupCode(event.target.value.toUpperCase())}
-              placeholder="KRF-2M9"
-              autoCapitalize="characters"
-            />
-            <button className="btn-ghost" type="submit" disabled={groupBusy || !groupCode.trim()}>
-              Join
-            </button>
-          </form>
-
+          </div>
           <button
             className="btn-ghost"
             type="button"
-            style={{ marginTop: 12 }}
             onClick={() =>
               void logout({ logoutParams: { returnTo: window.location.origin } })
             }
@@ -655,19 +808,25 @@ export function HomePage() {
         }}
       >
         <section className="pane" aria-label="Sent">
-          <p className="lede">
-            <button type="button" className="btn-ghost" onClick={() => setShowSent(false)}>
-              Sent. Swipe left to go back
+          <div className="pane-head">
+            <span className="pane-title">Sent</span>
+            <button
+              type="button"
+              className="arrow-btn"
+              aria-label="Back to your Stash"
+              onClick={() => setShowSent(false)}
+            >
+              ›
             </button>
-          </p>
+          </div>
           <div className="feed">
-            {sent.length === 0 ? (
+            {scopedSent.length === 0 ? (
               <div className="empty">
                 <h2>Nothing sent yet</h2>
                 <p className="lede">The shutter at the bottom is waiting.</p>
               </div>
             ) : (
-              sent.map((lock) => (
+              scopedSent.map((lock) => (
                 <Polaroid key={lock.id} lock={lock} viewerId={viewerId} onConfirm={confirm} />
               ))
             )}
@@ -675,11 +834,57 @@ export function HomePage() {
         </section>
 
         <section className="pane" aria-label="The Stash">
-          {needsName && !menuOpen ? (
+          {needsName && menu === 'none' ? (
             <div className="code-block name-card">
               <div>One thing first</div>
               {nameForm}
               <p className="hint">Right now you show up as “{me?.displayName}”.</p>
+            </div>
+          ) : null}
+
+          {!empty ? (
+            <div className="pane-head">
+              <button
+                type="button"
+                className="arrow-btn"
+                aria-label="See what you sent"
+                onClick={() => setShowSent(true)}
+              >
+                ‹
+              </button>
+              <select
+                className="scope"
+                aria-label="Show"
+                value={scopeValue}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === 'all') setScope({ kind: 'all' });
+                  else {
+                    const [kind, id] = value.split(':');
+                    setScope({ kind: kind as 'group' | 'pair', id });
+                  }
+                }}
+              >
+                <option value="all">Everyone</option>
+                {groups.length > 0 ? (
+                  <optgroup label="Groups">
+                    {groups.map((group) => (
+                      <option key={group.id} value={`group:${group.id}`}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {paired.length > 0 ? (
+                  <optgroup label="Pairs">
+                    {paired.map((friend) => (
+                      <option key={friend.id} value={`pair:${friend.id}`}>
+                        {friend.displayName}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+              </select>
             </div>
           ) : null}
 
@@ -761,28 +966,26 @@ export function HomePage() {
               />
             </div>
           ) : (
-            <>
-              <p className="lede">
-                <button type="button" className="btn-ghost" onClick={() => setShowSent(true)}>
-                  Swipe right for what you sent
-                </button>
-              </p>
-              <div className="feed">
-                {sortedInbox.map((lock) => (
-                  <Polaroid
-                    key={lock.id}
-                    lock={lock}
-                    viewerId={viewerId}
-                    onConfirm={confirm}
-                    onSetCondition={setCondition}
-                    onReply={(recipientId) => {
-                      setReplyTo(recipientId);
-                      setCapturing(true);
-                    }}
-                  />
-                ))}
-              </div>
-            </>
+            <div className="feed">
+              {scopedInbox.length === 0 ? (
+                <p className="hint" style={{ textAlign: 'center' }}>
+                  Nothing here yet for this {scope.kind === 'group' ? 'group' : 'pair'}.
+                </p>
+              ) : null}
+              {scopedInbox.map((lock) => (
+                <Polaroid
+                  key={lock.id}
+                  lock={lock}
+                  viewerId={viewerId}
+                  onConfirm={confirm}
+                  onSetCondition={setCondition}
+                  onReply={(recipientId) => {
+                    setReplyTo(recipientId);
+                    setCapturing(true);
+                  }}
+                />
+              ))}
+            </div>
           )}
         </section>
       </div>
@@ -805,6 +1008,7 @@ export function HomePage() {
           people={people}
           skies={skies}
           eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 14).slice(0, 2)}
+          campusFor={(schoolId) => campusFor(schoolId)}
           token={token}
           presetRecipientId={replyTo}
           onClose={() => setCapturing(false)}

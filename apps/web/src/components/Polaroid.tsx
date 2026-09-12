@@ -2,6 +2,12 @@ import { CONTEXT_LABELS, HOLD_TO_UNLOCK_MS, LockDto } from '@stashd/shared';
 import { useEffect, useRef, useState } from 'react';
 import { timeAgo } from '../lib/time';
 
+/**
+ * A polaroid: a square photo area on a white card with a thick bottom margin,
+ * where the condition is written by hand. Sealed, the photo area is an
+ * undeveloped print; hold it and it develops. Every card is tilted slightly,
+ * alternating, so a feed reads as a pile rather than a grid.
+ */
 export function Polaroid({
   lock,
   viewerId,
@@ -99,6 +105,8 @@ export function Polaroid({
   });
 
   const ring = lock.conditionType === 'TOGETHER' ? Math.max(progress, yours ? 1 : 0) : progress;
+  const showRing =
+    sealed && (progress > 0 || busy || (lock.conditionType === 'TOGETHER' && lock.confirmedIds.length > 0));
 
   const readyHint =
     lock.state === 'READY'
@@ -119,16 +127,27 @@ export function Polaroid({
         }.`
     : null;
 
+  const who = isRecipient ? lock.senderName : lock.recipientName;
+  const kicker = isRecipient
+    ? `from ${lock.senderName}${isGroup ? ` · to ${lock.recipientName}` : ''}`
+    : `to ${lock.recipientName}`;
+
   return (
     <article
-      className={`polaroid ${here ? 'here' : ''}`}
+      className={`polaroid ${sealed ? 'sealed' : 'developed'} ${here ? 'here' : ''} ${
+        canHold ? 'holdable' : ''
+      }`}
+      style={{ ['--tilt' as string]: `${tiltFor(lock.id)}deg` }}
       onPointerDown={startHold}
       onMouseDown={startHold}
       onPointerUp={releaseHold}
       onMouseUp={releaseHold}
       onPointerCancel={releaseHold}
     >
-      <div className={`frame ${lock.state === 'UNLOCKED' ? 'unlocked' : ''}`}>
+      <div
+        className={`frame ${lock.state === 'UNLOCKED' ? 'unlocked' : ''}`}
+        style={sealed && progress > 0 ? { ['--develop' as string]: progress } : undefined}
+      >
         {lock.state === 'UNLOCKED' && lock.song ? (
           <img
             src={lock.song.albumArtUrl}
@@ -137,24 +156,14 @@ export function Polaroid({
         ) : lock.state === 'UNLOCKED' && lock.imageUrl ? (
           <img src={lock.imageUrl} alt="" />
         ) : lock.state === 'UNLOCKED' ? (
-          <p className="revealed-text" style={{ color: '#f3ead8' }}>
-            {lock.text}
-          </p>
+          <p className="revealed-text on-print">{lock.text}</p>
         ) : (
-          <div className="hold-copy">
+          <div className="undeveloped">
             {lock.mediaKind === 'SONG' ? (
               <div className="sleeve" aria-hidden="true">
                 <span className="sleeve-disc" />
               </div>
             ) : null}
-            <div>
-              {isRecipient ? `From ${lock.senderName}` : `To ${lock.recipientName}`}
-              {isRecipient && isGroup ? ` · to ${lock.recipientName}` : ''}
-              {lock.mediaKind === 'SONG' ? ' · a song' : ''}
-            </div>
-            <p className="condition">
-              {lock.conditionLabel ?? 'You decide when this opens.'}
-            </p>
             {lock.conditionType === 'TOGETHER' && others.length > 0 ? (
               <div className="holders" aria-label={`${lock.confirmedIds.length} of ${lock.participantIds.length} holding`}>
                 {others.map((id) => (
@@ -165,12 +174,12 @@ export function Polaroid({
                 ))}
               </div>
             ) : null}
-            {hereHint ? <p className="hint here-hint">{hereHint}</p> : null}
-            {readyHint ? <p className="hint">{readyHint}</p> : null}
-            {canHold && !hereHint ? <p className="hint">Hold to unlock</p> : null}
+            <span className="undeveloped-hint">
+              {hereHint ?? readyHint ?? (canHold ? 'hold to develop' : lock.mediaKind === 'SONG' ? 'a song' : 'sealed')}
+            </span>
           </div>
         )}
-        {sealed && (progress > 0 || busy || (lock.conditionType === 'TOGETHER' && lock.confirmedIds.length > 0)) ? (
+        {showRing ? (
           <svg className="ring" viewBox="0 0 100 100">
             <circle
               cx="50"
@@ -204,6 +213,18 @@ export function Polaroid({
           </svg>
         ) : null}
       </div>
+
+      {/* The white margin. Condition in marker, who and when small underneath. */}
+      <div className="caption">
+        <p className="condition">
+          {lock.conditionLabel ?? (isRecipient ? 'You decide when this opens.' : 'They decide when it opens.')}
+        </p>
+        <div className="meta">
+          <span>{kicker}</span>
+          <span>{timeAgo(lock.createdAt)}</span>
+        </div>
+      </div>
+
       {lock.state === 'UNLOCKED' && lock.song ? (
         <div className="song-reveal">
           <div className="song-meta">
@@ -229,10 +250,7 @@ export function Polaroid({
       {lock.state === 'UNLOCKED' && (lock.imageUrl || lock.song) && lock.text ? (
         <p className="revealed-text">{lock.text}</p>
       ) : null}
-      <div className="meta">
-        <span>{isRecipient ? lock.senderName : lock.recipientName}</span>
-        <span>{timeAgo(lock.createdAt)}</span>
-      </div>
+
       {needsCondition ? (
         <form
           className="field"
@@ -261,9 +279,19 @@ export function Polaroid({
           type="button"
           onClick={() => onReply(lock.senderId)}
         >
-          Stash something back
+          Stash something back for {who}
         </button>
       ) : null}
     </article>
   );
+}
+
+/** A stable little tilt per card, between -2.2° and 2.2°, so the pile doesn't shuffle on re-render. */
+function tiltFor(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  }
+  const unit = ((hash % 1000) + 1000) % 1000 / 1000; // 0..1
+  return (unit * 4.4 - 2.2).toFixed(2) as unknown as number;
 }

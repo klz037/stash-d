@@ -111,6 +111,25 @@ npm test               # lock-engine unit tests
 
 The JWT guard is on every domain route. `GET /api/me` without a bearer token returns **401**. `GET /api/health` is public so you can confirm Mongo is up.
 
+## "Failed to fetch" on a deployed (Vercel) frontend
+
+The web app is static. It has to reach the API over the internet, and the API has to let it. "Failed to fetch" right after sign-in means the browser could not complete the `/api/me` call: either it went to the wrong place or CORS blocked it. Four things, all required:
+
+1. **The API is reachable from the internet.** A Vercel page cannot talk to `localhost:3000` on your laptop. Deploy the API (Render, Railway, Fly all work with `npm run build` then `npm run start:prod`), or expose the laptop with a tunnel for the demo. Note its public URL.
+2. **`VITE_API_URL`** in the Vercel project's environment variables is that URL, no trailing slash. Redeploy after setting it; Vite bakes env vars in at build time.
+3. **`WEB_ORIGIN`** on the API includes the Vercel origin, comma-separated: `http://localhost:5173,https://stash-d.vercel.app`. Every preview URL is its own origin.
+4. **Auth0 SPA settings**: the Vercel URL is in Allowed Callback URLs, Allowed Logout URLs, and Allowed Web Origins. Without this Auth0 refuses the redirect back, which looks like a login that never finishes.
+
+Quick check from the deployed page's devtools console: `fetch('<API URL>/api/health').then(r => r.json())`. If that fails, it's 1 or 3. If it works but sign-in still fails, it's 2 or 4.
+
+## When something says "Internal Server Error"
+
+Check these in order. They account for every 500 we've hit.
+
+1. **Is the API running?** `curl http://127.0.0.1:3000/api/health`. If nothing answers, the Vite proxy returns a bare 500 for every `/api` call and the app shows "Internal Server Error" right after login. `npm run dev` starts both; `nest start --watch` dies silently on a compile error, so look at the api pane.
+2. **Old lock documents.** Locks from before groups have `recipientId` instead of `recipientIds` and are invisible to their recipients. The migration is below. It has been run once on the shared cluster.
+3. **Spotify in development mode.** Spotify answers 403 for any listener whose email isn't under **User Management** on the app in the developer dashboard. The picker now says so instead of showing an empty "recently played". Connecting with a non-listed account is refused with the same message. Add each teammate's Spotify email before the demo.
+
 ## Seeding a demo
 
 Each teammate signs in once so their Auth0 user exists, then reads their id from `GET /api/me`. Then:

@@ -1,5 +1,5 @@
 {
-  "_note": "Dates for 2026–27. cmu, pitt and nyu were entered from the linked calendars. Schools marked approximate: true follow each school's usual pattern and should be checked against sourceUrl before they are read out loud.",
+  "_note": "Dates for 2026–27. cmu, pitt and nyu were entered from the linked calendars. Schools marked approximate: true follow each school's usual pattern and should be checked against sourceUrl before they are read out loud. athletics: UW and Pitt dates are from the linked 2026 schedules; other schools have none yet. quirks are campus things a friend can ask about.",
   "schools": [
     {
       "id": "cmu",
@@ -9,18 +9,90 @@
       "lon": -79.9436,
       "sourceUrl": "https://www.cmu.edu/hub/calendar/",
       "events": [
-        {"date": "2026-09-14", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-10", "label": "mid-semester break starts", "kind": "lull"},
-        {"date": "2026-10-13", "label": "mid-semester break ends", "kind": "stress"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess starts", "kind": "lull"},
-        {"date": "2026-12-07", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-08", "label": "reading day", "kind": "lull"},
-        {"date": "2026-12-09", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-16", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-12", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-06", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-03-14", "label": "spring break ends", "kind": "stress"},
-        {"date": "2027-05-09", "label": "commencement weekend", "kind": "milestone"}
+        {
+          "date": "2026-09-14",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-10",
+          "label": "mid-semester break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-10-13",
+          "label": "mid-semester break ends",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-08",
+          "label": "reading day",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-09",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-16",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-12",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-06",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-14",
+          "label": "spring break ends",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-05-09",
+          "label": "commencement weekend",
+          "kind": "milestone"
+        }
+      ],
+      "mascot": "Tartans",
+      "teams": "the Tartans",
+      "athleticsUrl": "https://athletics.cmu.edu/calendar",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Fence",
+          "prompt": "What's painted on the Fence today?",
+          "condition": "Open when you walk past the Fence",
+          "sourceUrl": "https://www.cmu.edu/about/traditions.html"
+        },
+        {
+          "label": "the Cut",
+          "prompt": "Is anyone out on the Cut right now?",
+          "condition": "Open when you're sitting on the Cut",
+          "sourceUrl": "https://www.cmu.edu/about/traditions.html"
+        },
+        {
+          "label": "Scotty",
+          "prompt": "Seen Scotty around today?",
+          "condition": "Open when you see Scotty",
+          "sourceUrl": "https://www.cmu.edu/about/traditions.html"
+        }
       ]
     },
     {
@@ -31,17 +103,98 @@
       "lon": -79.9606,
       "sourceUrl": "https://www.registrar.pitt.edu/calendars",
       "events": [
-        {"date": "2026-09-05", "label": "add/drop period ends", "kind": "stress"},
-        {"date": "2026-10-17", "label": "fall break", "kind": "lull"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
-        {"date": "2026-12-05", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-08", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-15", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-05", "label": "spring term begins", "kind": "milestone"},
-        {"date": "2027-03-08", "label": "spring recess starts", "kind": "lull"},
-        {"date": "2027-03-15", "label": "spring recess ends", "kind": "stress"},
-        {"date": "2027-04-30", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-01", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-09-05",
+          "label": "add/drop period ends",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-17",
+          "label": "fall break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-05",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-08",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-15",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-05",
+          "label": "spring term begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-08",
+          "label": "spring recess starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "spring recess ends",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-04-30",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-01",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Panthers",
+      "teams": "the Panthers",
+      "athleticsUrl": "https://pittsburghpanthers.com/sports/football/schedule",
+      "athletics": [
+        {
+          "date": "2026-09-17",
+          "label": "Pitt vs Syracuse",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-10-02",
+          "label": "Pitt at Virginia Tech",
+          "sport": "football",
+          "home": false
+        },
+        {
+          "date": "2026-11-13",
+          "label": "Pitt vs Florida State",
+          "sport": "football",
+          "home": true
+        }
+      ],
+      "quirks": [
+        {
+          "label": "the Cathedral of Learning",
+          "prompt": "Which floor of the Cathedral are you studying on?",
+          "condition": "Open when you're in the Cathedral",
+          "sourceUrl": "https://www.tour.pitt.edu/tour/cathedral-learning"
+        },
+        {
+          "label": "the Victory Lights",
+          "prompt": "Are the victory lights on tonight?",
+          "condition": "Open when the Cathedral lights up",
+          "sourceUrl": "https://www.pitt.edu/pittwire/features-articles/victory-lights-pitt-tradition"
+        }
       ]
     },
     {
@@ -52,17 +205,79 @@
       "lon": -73.9965,
       "sourceUrl": "https://www.nyu.edu/students/student-guides/academic-calendar.html",
       "events": [
-        {"date": "2026-09-15", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "fall recess", "kind": "lull"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
-        {"date": "2026-12-11", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-15", "label": "final exams begin", "kind": "stress"},
-        {"date": "2027-01-20", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-03-22", "label": "spring break ends", "kind": "stress"},
-        {"date": "2027-05-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-06", "label": "reading day", "kind": "lull"},
-        {"date": "2027-05-07", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-09-15",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "fall recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-15",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-01-20",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break ends",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-05-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-06",
+          "label": "reading day",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-05-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Violets",
+      "teams": "the Violets",
+      "athleticsUrl": "https://gonyuathletics.com/calendar",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "Washington Square Park",
+          "prompt": "Who is playing music by the fountain today?",
+          "condition": "Open when you cross Washington Square Park",
+          "sourceUrl": "https://www.nycgovparks.org/parks/washington-square-park"
+        },
+        {
+          "label": "Bobst",
+          "prompt": "Which floor of Bobst are you hiding on?",
+          "condition": "Open when you're in Bobst",
+          "sourceUrl": "https://library.nyu.edu/locations/bobst-library/"
+        }
       ]
     },
     {
@@ -74,16 +289,67 @@
       "approximate": true,
       "sourceUrl": "https://registrar.columbia.edu/content/academic-calendar",
       "events": [
-        {"date": "2026-09-08", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-18", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-19", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
-        {"date": "2026-12-14", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-16", "label": "final exams begin", "kind": "stress"},
-        {"date": "2027-01-19", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-05-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-07", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-09-08",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-18",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-19",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-14",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-16",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-01-19",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-05-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Lions",
+      "teams": "the Lions",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "Low Steps",
+          "prompt": "Anyone on Low Steps in this weather?",
+          "condition": "Open when you're on Low Steps",
+          "sourceUrl": "https://www.columbia.edu/content/campus-life"
+        }
       ]
     },
     {
@@ -95,17 +361,72 @@
       "approximate": true,
       "sourceUrl": "https://www.registrar.psu.edu/academic-calendars/",
       "events": [
-        {"date": "2026-08-24", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-04", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-22", "label": "Thanksgiving break starts", "kind": "lull"},
-        {"date": "2026-12-11", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-14", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-18", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-11", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-08", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-30", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-03", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-24",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-04",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-22",
+          "label": "Thanksgiving break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-14",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-18",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-11",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-08",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-30",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-03",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Nittany Lions",
+      "teams": "the Nittany Lions",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Creamery",
+          "prompt": "What flavor did you get at the Creamery?",
+          "condition": "Open at the Creamery",
+          "sourceUrl": "https://creamery.psu.edu/"
+        }
       ]
     },
     {
@@ -117,17 +438,72 @@
       "approximate": true,
       "sourceUrl": "https://registrar.osu.edu/staff/bigcal.asp",
       "events": [
-        {"date": "2026-08-25", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-04", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-15", "label": "autumn break", "kind": "lull"},
-        {"date": "2026-11-25", "label": "Thanksgiving break", "kind": "lull"},
-        {"date": "2026-12-09", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-11", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-17", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-11", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-27", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-04-29", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-25",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-04",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-15",
+          "label": "autumn break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-09",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-17",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-11",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-27",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-04-29",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Buckeyes",
+      "teams": "the Buckeyes",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Oval",
+          "prompt": "Is the Oval full of hammocks today?",
+          "condition": "Open when you're on the Oval",
+          "sourceUrl": "https://www.osu.edu/"
+        }
       ]
     },
     {
@@ -139,17 +515,72 @@
       "approximate": true,
       "sourceUrl": "https://ro.umich.edu/calendars",
       "events": [
-        {"date": "2026-08-31", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-21", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-19", "label": "fall study break", "kind": "lull"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
-        {"date": "2026-12-09", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-11", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-18", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-06", "label": "winter semester begins", "kind": "milestone"},
-        {"date": "2027-02-27", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-20", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-04-22", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-31",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-21",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-19",
+          "label": "fall study break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-09",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-18",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-06",
+          "label": "winter semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-02-27",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-20",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-04-22",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Wolverines",
+      "teams": "the Wolverines",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Diag",
+          "prompt": "Did you step on the M today?",
+          "condition": "Open when you cross the Diag",
+          "sourceUrl": "https://umich.edu/"
+        }
       ]
     },
     {
@@ -161,17 +592,72 @@
       "approximate": true,
       "sourceUrl": "https://registrar.illinois.edu/academic-calendars/",
       "events": [
-        {"date": "2026-08-24", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-04", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-21", "label": "fall break starts", "kind": "lull"},
-        {"date": "2026-12-09", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-11", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-18", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-19", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-13", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-05-05", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-07", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-24",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-04",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-21",
+          "label": "fall break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-09",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-18",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-19",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-13",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-05-05",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Fighting Illini",
+      "teams": "the Fighting Illini",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Quad",
+          "prompt": "Any hammocks on the Quad?",
+          "condition": "Open when you're on the Quad",
+          "sourceUrl": "https://illinois.edu/"
+        }
       ]
     },
     {
@@ -183,18 +669,77 @@
       "approximate": true,
       "sourceUrl": "https://registrar.gatech.edu/calendar",
       "events": [
-        {"date": "2026-08-17", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-08-21", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "fall break", "kind": "lull"},
-        {"date": "2026-10-24", "label": "withdrawal deadline", "kind": "stress"},
-        {"date": "2026-11-25", "label": "Thanksgiving break", "kind": "lull"},
-        {"date": "2026-12-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-07", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-11", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-11", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-22", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-26", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-04-29", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-17",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-08-21",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "fall break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-10-24",
+          "label": "withdrawal deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-11",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-26",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-04-29",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Yellow Jackets",
+      "teams": "the Yellow Jackets",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Ramblin Wreck",
+          "prompt": "Seen the Wreck out today?",
+          "condition": "Open when you're on Tech Green",
+          "sourceUrl": "https://www.gatech.edu/"
+        }
       ]
     },
     {
@@ -206,17 +751,72 @@
       "approximate": true,
       "sourceUrl": "https://registrar.utexas.edu/calendars",
       "events": [
-        {"date": "2026-08-24", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-04", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-23", "label": "Thanksgiving break starts", "kind": "lull"},
-        {"date": "2026-12-07", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-10", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-16", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-19", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-05-07", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-11", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-24",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-04",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-23",
+          "label": "Thanksgiving break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-10",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-16",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-19",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-05-07",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-11",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Longhorns",
+      "teams": "the Longhorns",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Tower",
+          "prompt": "Is the Tower lit orange tonight?",
+          "condition": "Open when the Tower is orange",
+          "sourceUrl": "https://tower.utexas.edu/"
+        }
       ]
     },
     {
@@ -228,18 +828,77 @@
       "approximate": true,
       "sourceUrl": "https://registrar.berkeley.edu/calendar/",
       "events": [
-        {"date": "2026-08-26", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-09", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-25", "label": "Thanksgiving break", "kind": "lull"},
-        {"date": "2026-12-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-07", "label": "reading week", "kind": "lull"},
-        {"date": "2026-12-11", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-18", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-19", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-22", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-30", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-10", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-26",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-09",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "reading week",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-18",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-19",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-30",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-10",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Golden Bears",
+      "teams": "the Golden Bears",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Campanile",
+          "prompt": "Did you catch the carillon today?",
+          "condition": "Open when the Campanile rings",
+          "sourceUrl": "https://campanile.berkeley.edu/"
+        }
       ]
     },
     {
@@ -251,18 +910,77 @@
       "approximate": true,
       "sourceUrl": "https://registrar.ucla.edu/academic-calendar",
       "events": [
-        {"date": "2026-09-24", "label": "fall quarter begins", "kind": "milestone"},
-        {"date": "2026-10-09", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-26", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-26", "label": "Thanksgiving break", "kind": "lull"},
-        {"date": "2026-12-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-07", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-11", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-04", "label": "winter quarter begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "winter finals begin", "kind": "stress"},
-        {"date": "2027-03-22", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-03-29", "label": "spring quarter begins", "kind": "milestone"},
-        {"date": "2027-06-07", "label": "spring finals begin", "kind": "stress"}
+        {
+          "date": "2026-09-24",
+          "label": "fall quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-10-09",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-26",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-26",
+          "label": "Thanksgiving break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-04",
+          "label": "winter quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "winter finals begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-29",
+          "label": "spring quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-06-07",
+          "label": "spring finals begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Bruins",
+      "teams": "the Bruins",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "Janss Steps",
+          "prompt": "How many of the 87 steps did you skip?",
+          "condition": "Open at the top of Janss Steps",
+          "sourceUrl": "https://www.ucla.edu/"
+        }
       ]
     },
     {
@@ -274,18 +992,77 @@
       "approximate": true,
       "sourceUrl": "https://registrar.stanford.edu/academic-calendar",
       "events": [
-        {"date": "2026-09-21", "label": "autumn quarter begins", "kind": "milestone"},
-        {"date": "2026-10-09", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-26", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-23", "label": "Thanksgiving recess starts", "kind": "lull"},
-        {"date": "2026-12-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-07", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-11", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-05", "label": "winter quarter begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "winter finals begin", "kind": "stress"},
-        {"date": "2027-03-22", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-03-29", "label": "spring quarter begins", "kind": "milestone"},
-        {"date": "2027-06-07", "label": "spring finals begin", "kind": "stress"}
+        {
+          "date": "2026-09-21",
+          "label": "autumn quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-10-09",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-26",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-23",
+          "label": "Thanksgiving recess starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-05",
+          "label": "winter quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "winter finals begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-29",
+          "label": "spring quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-06-07",
+          "label": "spring finals begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Cardinal",
+      "teams": "the Cardinal",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Oval",
+          "prompt": "Sunset on the Oval yet?",
+          "condition": "Open when you're on the Oval",
+          "sourceUrl": "https://www.stanford.edu/"
+        }
       ]
     },
     {
@@ -297,18 +1074,157 @@
       "approximate": true,
       "sourceUrl": "https://www.washington.edu/students/reg/calendar.html",
       "events": [
-        {"date": "2026-09-30", "label": "autumn quarter begins", "kind": "milestone"},
-        {"date": "2026-10-13", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-11-02", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-26", "label": "Thanksgiving break", "kind": "lull"},
-        {"date": "2026-12-11", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-14", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-18", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-04", "label": "winter quarter begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "winter finals begin", "kind": "stress"},
-        {"date": "2027-03-22", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-03-29", "label": "spring quarter begins", "kind": "milestone"},
-        {"date": "2027-06-07", "label": "spring finals begin", "kind": "stress"}
+        {
+          "date": "2026-09-30",
+          "label": "autumn quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-10-13",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-02",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-26",
+          "label": "Thanksgiving break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-14",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-18",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-04",
+          "label": "winter quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "winter finals begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-29",
+          "label": "spring quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-06-07",
+          "label": "spring finals begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Huskies",
+      "teams": "the Huskies",
+      "athleticsUrl": "https://gohuskies.com/sports/football/schedule",
+      "athletics": [
+        {
+          "date": "2026-09-05",
+          "label": "Washington vs Washington State (Apple Cup)",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-09-12",
+          "label": "Washington vs Utah State",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-09-19",
+          "label": "Washington vs Eastern Washington",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-09-26",
+          "label": "Washington vs Minnesota",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-10-03",
+          "label": "Washington at USC",
+          "sport": "football",
+          "home": false
+        },
+        {
+          "date": "2026-10-10",
+          "label": "Washington vs Iowa",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-10-17",
+          "label": "Washington at Purdue",
+          "sport": "football",
+          "home": false
+        },
+        {
+          "date": "2026-10-31",
+          "label": "Washington at Nebraska",
+          "sport": "football",
+          "home": false
+        },
+        {
+          "date": "2026-11-07",
+          "label": "Washington vs Penn State",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-11-14",
+          "label": "Washington at Michigan State",
+          "sport": "football",
+          "home": false
+        },
+        {
+          "date": "2026-11-21",
+          "label": "Washington vs Indiana",
+          "sport": "football",
+          "home": true
+        },
+        {
+          "date": "2026-11-28",
+          "label": "Washington at Oregon",
+          "sport": "football",
+          "home": false
+        }
+      ],
+      "quirks": [
+        {
+          "label": "the Quad",
+          "prompt": "How do the cherry trees look today?",
+          "condition": "Open when you're on the Quad",
+          "sourceUrl": "https://www.washington.edu/news/cherry-blossoms/"
+        },
+        {
+          "label": "Red Square",
+          "prompt": "Is it slippery on Red Square yet?",
+          "condition": "Open when you cross Red Square",
+          "sourceUrl": "https://www.washington.edu/maps/"
+        }
       ]
     },
     {
@@ -320,18 +1236,77 @@
       "approximate": true,
       "sourceUrl": "https://registrar.fas.harvard.edu/calendar",
       "events": [
-        {"date": "2026-09-02", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-14", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
-        {"date": "2026-12-02", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-03", "label": "reading period", "kind": "lull"},
-        {"date": "2026-12-10", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-18", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-25", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-13", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-28", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-06", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-09-02",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-14",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-02",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-03",
+          "label": "reading period",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-10",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-18",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-25",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-13",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-28",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-06",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Crimson",
+      "teams": "the Crimson",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the John Harvard statue",
+          "prompt": "How many tourists at the statue today?",
+          "condition": "Open when you pass John Harvard",
+          "sourceUrl": "https://www.harvard.edu/"
+        }
       ]
     },
     {
@@ -343,17 +1318,72 @@
       "approximate": true,
       "sourceUrl": "https://www.bu.edu/reg/calendars/",
       "events": [
-        {"date": "2026-09-02", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-15", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-12", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-25", "label": "Thanksgiving recess", "kind": "lull"},
-        {"date": "2026-12-10", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-12", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-19", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-20", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-06", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-30", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-05-04", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-09-02",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-15",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-25",
+          "label": "Thanksgiving recess",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-10",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-12",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-19",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-20",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-06",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-30",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-05-04",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Terriers",
+      "teams": "the Terriers",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the BU Beach",
+          "prompt": "Is anyone on the Beach today?",
+          "condition": "Open when you're on the BU Beach",
+          "sourceUrl": "https://www.bu.edu/"
+        }
       ]
     },
     {
@@ -365,18 +1395,77 @@
       "approximate": true,
       "sourceUrl": "https://registrar.duke.edu/academic-calendar/",
       "events": [
-        {"date": "2026-08-24", "label": "first day of classes", "kind": "milestone"},
-        {"date": "2026-09-04", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-10", "label": "fall break starts", "kind": "lull"},
-        {"date": "2026-10-19", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-24", "label": "Thanksgiving recess starts", "kind": "lull"},
-        {"date": "2026-12-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-08", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-13", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-06", "label": "spring semester begins", "kind": "milestone"},
-        {"date": "2027-03-08", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-04-21", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2027-04-26", "label": "final exams begin", "kind": "stress"}
+        {
+          "date": "2026-08-24",
+          "label": "first day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-09-04",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-10",
+          "label": "fall break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-10-19",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-24",
+          "label": "Thanksgiving recess starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-08",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-13",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-06",
+          "label": "spring semester begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-08",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-04-21",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-04-26",
+          "label": "final exams begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Blue Devils",
+      "teams": "the Blue Devils",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "K-Ville",
+          "prompt": "Are the tents up in K-Ville yet?",
+          "condition": "Open when you walk past K-Ville",
+          "sourceUrl": "https://www.duke.edu/"
+        }
       ]
     },
     {
@@ -388,18 +1477,77 @@
       "approximate": true,
       "sourceUrl": "https://www.registrar.northwestern.edu/calendars/academic-calendars/",
       "events": [
-        {"date": "2026-09-22", "label": "fall quarter begins", "kind": "milestone"},
-        {"date": "2026-10-05", "label": "add/drop deadline", "kind": "stress"},
-        {"date": "2026-10-26", "label": "midterms week", "kind": "stress"},
-        {"date": "2026-11-26", "label": "Thanksgiving break", "kind": "lull"},
-        {"date": "2026-12-04", "label": "last day of classes", "kind": "milestone"},
-        {"date": "2026-12-07", "label": "final exams begin", "kind": "stress"},
-        {"date": "2026-12-11", "label": "final exams end", "kind": "milestone"},
-        {"date": "2027-01-04", "label": "winter quarter begins", "kind": "milestone"},
-        {"date": "2027-03-15", "label": "winter finals begin", "kind": "stress"},
-        {"date": "2027-03-22", "label": "spring break starts", "kind": "lull"},
-        {"date": "2027-03-30", "label": "spring quarter begins", "kind": "milestone"},
-        {"date": "2027-06-07", "label": "spring finals begin", "kind": "stress"}
+        {
+          "date": "2026-09-22",
+          "label": "fall quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-10-05",
+          "label": "add/drop deadline",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-10-26",
+          "label": "midterms week",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-11-26",
+          "label": "Thanksgiving break",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-04",
+          "label": "last day of classes",
+          "kind": "milestone"
+        },
+        {
+          "date": "2026-12-07",
+          "label": "final exams begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2026-12-11",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-04",
+          "label": "winter quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-03-15",
+          "label": "winter finals begin",
+          "kind": "stress"
+        },
+        {
+          "date": "2027-03-22",
+          "label": "spring break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2027-03-30",
+          "label": "spring quarter begins",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-06-07",
+          "label": "spring finals begin",
+          "kind": "stress"
+        }
+      ],
+      "mascot": "Wildcats",
+      "teams": "the Wildcats",
+      "athletics": [],
+      "quirks": [
+        {
+          "label": "the Lakefill",
+          "prompt": "How does the lake look today?",
+          "condition": "Open when you're on the Lakefill",
+          "sourceUrl": "https://www.northwestern.edu/"
+        }
       ]
     }
   ]

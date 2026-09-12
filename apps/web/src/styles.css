@@ -205,33 +205,55 @@ button {
   gap: 22px;
 }
 
+/* --- the polaroid -------------------------------------------------------
+   A real instant print: white card, square photo, thick bottom margin for
+   the handwriting. Sealed prints look undeveloped. Cards sit slightly
+   tilted, alternating, like a pile on a desk. */
+
 .polaroid {
-  background: var(--polaroid);
-  border-radius: 6px 6px 18px 18px;
-  box-shadow: var(--shadow);
-  padding: 14px 14px 20px;
+  --tilt: 0deg;
+  background: #fdfcf8;
+  border-radius: 3px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 14px 30px rgba(70, 42, 20, 0.22),
+    0 2px 4px rgba(70, 42, 20, 0.12);
+  padding: 14px 14px 16px;
   position: relative;
-  overflow: hidden;
   touch-action: none;
   user-select: none;
+  transform: rotate(var(--tilt));
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  margin: 6px 6px 10px;
 }
 
-.polaroid::before {
+.polaroid.holdable:active {
+  transform: rotate(0deg) scale(1.01);
+}
+
+/* A faint paper grain on the card. */
+.polaroid::after {
   content: '';
   position: absolute;
-  inset: 0 auto auto 0;
-  width: 100%;
-  height: 6px;
-  background: var(--accent);
+  inset: 0;
+  border-radius: 3px;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(28, 22, 18, 0.035) 1px, transparent 1px);
+  background-size: 3px 3px;
+  opacity: 0.6;
 }
 
 .frame {
-  min-height: 220px;
+  --develop: 0;
+  aspect-ratio: 1 / 1;
   background: #d9cbb3;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12);
 }
 
 .frame.unlocked {
@@ -240,33 +262,71 @@ button {
 
 .frame img {
   width: 100%;
-  height: 240px;
+  height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.hold-copy {
-  position: relative;
-  z-index: 1;
+/* Undeveloped print: the blue-grey of a fresh instant photo. Holding
+   lightens it a little as the ring fills, like an image coming up. */
+.undeveloped {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 253, 248, calc(0.05 + var(--develop) * 0.35)), transparent 60%),
+    linear-gradient(180deg, #4a5560 0%, #2f3840 100%);
+  color: rgba(243, 234, 216, 0.75);
+}
+
+.undeveloped-hint {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
   text-align: center;
-  padding: 24px;
-  color: #3d342c;
+  padding: 0 24px;
+}
+
+.polaroid.here .undeveloped-hint {
+  color: #ffd9c9;
+  font-weight: 600;
+}
+
+.revealed-text.on-print {
+  color: #f3ead8;
+  padding: 18px;
+  margin: 0;
+  text-align: center;
+}
+
+/* The white margin under the photo: the condition, in marker. */
+.caption {
+  padding: 14px 4px 0;
+  min-height: 74px;
 }
 
 .condition {
   font-family: Caveat, cursive;
-  font-size: 1.65rem;
-  line-height: 1.15;
-  margin: 8px 0 0;
+  font-size: 1.7rem;
+  line-height: 1.1;
+  margin: 0;
+  color: #1c1612;
+  transform: rotate(-0.6deg);
+  transform-origin: left;
 }
 
 .meta {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: 8px;
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
+  letter-spacing: 0.02em;
 }
 
 .revealed-text {
@@ -712,7 +772,7 @@ button {
 
 /* A card whose condition just came true glows until it's held. */
 .polaroid.here .frame {
-  box-shadow: 0 0 0 3px rgba(194, 74, 42, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.35);
 }
 
 .here-hint {
@@ -840,7 +900,9 @@ button {
 }
 
 .menu-profile small {
+  display: block;
   color: var(--ink-soft);
+  margin-top: 2px;
 }
 
 .brand-big {
@@ -888,4 +950,131 @@ button {
   text-transform: uppercase;
   color: var(--ink-soft);
   margin: 14px 0 6px;
+}
+
+/* --- top bar actions, ☰ menu, feed scope, pane arrows ----------------- */
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.icon-btn.active,
+.avatar.active {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.burger,
+.burger::before,
+.burger::after {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 2px;
+  position: relative;
+}
+
+.burger::before,
+.burger::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.burger::before {
+  top: -5px;
+}
+
+.burger::after {
+  top: 5px;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.menu-item:first-child {
+  border-top: 0;
+}
+
+.menu-count {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.menu-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--ink);
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.menu-link small {
+  display: block;
+  color: var(--ink-soft);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 14px;
+}
+
+.pane-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.arrow-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  color: var(--ink-soft);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0 0 3px;
+  display: grid;
+  place-items: center;
+}
+
+.scope {
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  color: var(--ink);
+  max-width: 60%;
 }
