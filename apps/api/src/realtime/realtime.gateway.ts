@@ -7,7 +7,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { GroupDto, LockDto, SOCKET_EVENTS } from '@stashd/shared';
+import { FriendRequestDto, GroupDto, LockDto, SOCKET_EVENTS } from '@stashd/shared';
 import { decode, verify, JwtHeader, VerifyOptions } from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { Server, Socket } from 'socket.io';
@@ -121,6 +121,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     for (const id of group.memberIds) {
       this.toUser(id).emit(SOCKET_EVENTS.groupUpdated, group);
     }
+  }
+
+  /** Someone entered your code. Only you hear it; nothing is shared until you accept. */
+  notifyFriendRequested(toUserId: string, request: FriendRequestDto) {
+    this.toUser(toUserId).emit(SOCKET_EVENTS.friendRequested, request);
   }
 
   notifyPaired(userId: string, friendId: string) {

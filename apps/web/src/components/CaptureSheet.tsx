@@ -1,12 +1,13 @@
 import {
   ConditionType,
-  CONTEXT_LABELS,
-  CONTEXTS,
   contextConditionLabel,
+  DEFAULT_MOMENTS,
   FriendDto,
   GroupDto,
   LockContext,
+  MAX_MOMENT_LENGTH,
   MAX_RECIPIENTS,
+  normalizeMoment,
   SongDto,
 } from '@stashd/shared';
 import { Icon } from './Icon';
@@ -70,9 +71,11 @@ export function CaptureSheet({
   groups,
   people,
   skies,
+  knownMoments,
   eventsFor,
   campusFor,
   presetRecipientId,
+  replyToId,
   token,
   onClose,
   onSubmit,
@@ -81,9 +84,13 @@ export function CaptureSheet({
   groups: GroupDto[];
   people: Record<string, Person>;
   skies: SkyMap;
+  /** Moments already in use across your pairs and groups, most recent first. */
+  knownMoments: string[];
   eventsFor: (schoolId: string) => UpcomingEvent[];
   campusFor: (schoolId: string | undefined) => Campus | null;
   presetRecipientId?: string;
+  /** Answering an "open together": recipient and type are fixed, so those steps are skipped. */
+  replyToId?: string;
   token: () => Promise<string>;
   onClose: () => void;
   onSubmit: (input: {
@@ -93,6 +100,7 @@ export function CaptureSheet({
     conditionType: ConditionType;
     conditionLabel?: string;
     context?: LockContext | null;
+    replyToId?: string;
     songTrackId?: string;
   }) => Promise<void>;
 }) {
@@ -105,7 +113,8 @@ export function CaptureSheet({
   );
   const [conditionType, setConditionType] = useState<ConditionType>('MANUAL');
   const [conditionLabel, setConditionLabel] = useState('');
-  const [context, setContext] = useState<LockContext | null>(null);
+  const [moment, setMoment] = useState<string | null>(null);
+  const [momentDraft, setMomentDraft] = useState('');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -138,7 +147,6 @@ export function CaptureSheet({
         .filter((sky): sky is Sky => Boolean(sky)),
     [recipients, skies],
   );
-  // Sky first (it's happening now), then campus places, capped so the chips stay a row or two.
   const suggestions = useMemo(() => {
     const out = suggestConditions(recipientSkies);
     const seen = new Set<string>();
@@ -151,6 +159,18 @@ export function CaptureSheet({
     }
     return out.slice(0, 6);
   }, [recipientSkies, recipients, campusFor]);
+
+  // Moment chips: the ones already in use come first (they're albums people
+  // are building), then the defaults, then whatever the sender typed.
+  const momentChips = useMemo(() => {
+    const out: string[] = [];
+    for (const m of [...knownMoments, ...DEFAULT_MOMENTS]) {
+      const n = normalizeMoment(m);
+      if (n && !out.includes(n)) out.push(n);
+    }
+    if (moment && !out.includes(moment)) out.unshift(moment);
+    return out.slice(0, 10);
+  }, [knownMoments, moment]);
 
   useEffect(() => {
     let cancelled = false;
@@ -297,11 +317,19 @@ export function CaptureSheet({
     }
   }
 
-  function pickContext(next: LockContext | null) {
-    setContext(next);
+  function pickMoment(next: string | null) {
+    const normalized = next ? normalizeMoment(next) : null;
+    setMoment(normalized);
     if (conditionType === 'MANUAL') {
-      fillLabel(next ? contextConditionLabel(next) : '');
+      fillLabel(normalized ? contextConditionLabel(normalized) : '');
     }
+  }
+
+  function addTypedMoment() {
+    const typed = normalizeMoment(momentDraft);
+    if (!typed) return;
+    pickMoment(typed);
+    setMomentDraft('');
   }
 
   function pickSuggestion(label: string) {
@@ -311,10 +339,10 @@ export function CaptureSheet({
 
   function labelFor(type: ConditionType): string | undefined {
     if (type === 'MANUAL') {
-      return conditionLabel.trim() || (context ? contextConditionLabel(context) : undefined);
+      return conditionLabel.trim() || (moment ? contextConditionLabel(moment) : undefined);
     }
-    if (type === 'TOGETHER' && context) {
-      return `Open together when you're ${CONTEXT_LABELS[context]}`;
+    if (type === 'TOGETHER' && moment) {
+      return `Open together when you're ${moment}`;
     }
     return undefined;
   }
@@ -322,21 +350,32 @@ export function CaptureSheet({
   const canStash =
     !busy &&
     recipientIds.length > 0 &&
-    (conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
+    (Boolean(replyToId) || conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
 
   async function finish() {
     setBusy(true);
     setError('');
     try {
-      await onSubmit({
-        recipientIds,
-        text,
-        imageUrl,
-        songTrackId: song?.trackId,
-        conditionType,
-        conditionLabel: labelFor(conditionType),
-        context: conditionType === 'RECIPIENT_SET' ? null : context,
-      });
+      await onSubmit(
+        replyToId
+          ? {
+              recipientIds,
+              text,
+              imageUrl,
+              songTrackId: song?.trackId,
+              conditionType: 'TOGETHER',
+              replyToId,
+            }
+          : {
+              recipientIds,
+              text,
+              imageUrl,
+              songTrackId: song?.trackId,
+              conditionType,
+              conditionLabel: labelFor(conditionType),
+              context: conditionType === 'RECIPIENT_SET' ? null : moment,
+            },
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not stash that.');
       setBusy(false);
@@ -441,8 +480,12 @@ export function CaptureSheet({
                 placeholder="For later."
               />
             </label>
-            <button className="btn" type="button" onClick={() => setStep('recipient')}>
-              Choose who
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setStep(replyToId ? 'condition' : 'recipient')}
+            >
+              {replyToId ? `Stash back to ${whoLabel}` : 'Choose who'}
             </button>
           </>
         ) : null}
@@ -504,9 +547,7 @@ export function CaptureSheet({
               </button>
             </div>
             {adding ? (
-              <p className="hint">
-                Pair with a code on the empty Stash, or join a group from the menu.
-              </p>
+              <p className="hint">Use “Add a friend” or “Join a group” in the ☰ menu.</p>
             ) : null}
             <button
               className="btn"
@@ -574,9 +615,13 @@ export function CaptureSheet({
 
         {step === 'condition' ? (
           <>
-            <h2>How does it open?</h2>
-            <p className="lede">For {whoLabel}.</p>
-            <div className="choices">
+            <h2>{replyToId ? 'Stash back' : 'How does it open?'}</h2>
+            <p className="lede">
+              {replyToId
+                ? `This answers ${whoLabel}'s "open together". It opens with theirs: they start, you open at the same moment.`
+                : `For ${whoLabel}.`}
+            </p>
+            <div className="choices" hidden={Boolean(replyToId)}>
               {(
                 [
                   ['MANUAL', 'Open when…'],
@@ -596,9 +641,9 @@ export function CaptureSheet({
                   </button>
                 ))}
             </div>
-            {conditionType === 'MANUAL' ? (
+            {replyToId ? null : conditionType === 'MANUAL' ? (
               <label className="field">
-                Condition
+                Condition, in your words
                 <input
                   value={conditionLabel}
                   onChange={(event) => setConditionLabel(event.target.value)}
@@ -606,7 +651,7 @@ export function CaptureSheet({
                 />
                 {suggestions.length > 0 ? (
                   <>
-                    <span className="hint">From where they are right now</span>
+                    <span className="hint">Or tap one. These come from where they are right now.</span>
                     <div className="chips">
                       {suggestions.map((label) => (
                         <button
@@ -631,23 +676,46 @@ export function CaptureSheet({
                   : 'They write the condition after it arrives.'}
               </p>
             )}
-            {conditionType !== 'RECIPIENT_SET' ? (
+            {!replyToId && conditionType !== 'RECIPIENT_SET' ? (
               <div className="field">
-                <span>Tie it to a moment</span>
+                <span>Add it to a moment (optional)</span>
                 <div className="chips">
-                  {CONTEXTS.map((item) => (
+                  {momentChips.map((item) => (
                     <button
                       key={item}
                       type="button"
-                      className={`chip ${context === item ? 'active' : ''}`}
-                      onClick={() => pickContext(context === item ? null : item)}
+                      className={`chip ${moment === item ? 'active' : ''}`}
+                      onClick={() => pickMoment(moment === item ? null : item)}
                     >
-                      {CONTEXT_LABELS[item]}
+                      {item}
                     </button>
                   ))}
                 </div>
+                <div className="moment-input">
+                  <input
+                    value={momentDraft}
+                    maxLength={MAX_MOMENT_LENGTH}
+                    onChange={(event) => setMomentDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        addTypedMoment();
+                      }
+                    }}
+                    placeholder="or type your own: at the Fence"
+                  />
+                  <button
+                    className="btn-ghost"
+                    type="button"
+                    disabled={!normalizeMoment(momentDraft)}
+                    onClick={addTypedMoment}
+                  >
+                    Add
+                  </button>
+                </div>
                 <p className="hint">
-                  When they tap “I'm here” for that moment, you'll know. They still hold to open.
+                  A moment is an album. Every stash tied to “{moment ?? 'getting coffee'}” across your
+                  pairs and groups lands together, and when they tap “I'm here” for it, you'll know.
                 </p>
               </div>
             ) : null}
@@ -658,7 +726,7 @@ export function CaptureSheet({
               className="btn-ghost"
               type="button"
               style={{ marginTop: 8 }}
-              onClick={() => setStep('review')}
+              onClick={() => setStep(replyToId ? 'text' : 'review')}
             >
               Back
             </button>

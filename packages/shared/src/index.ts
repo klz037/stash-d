@@ -24,20 +24,26 @@ export const CONDITION_TYPES: ConditionType[] = [
 // unlock. Context tells everyone the condition is true; it opens nothing.
 // ---------------------------------------------------------------------------
 
-export const CONTEXTS = ['coffee', 'walking-home', 'studying', 'home'] as const;
-export type LockContext = (typeof CONTEXTS)[number];
+/**
+ * A moment is free text, written by the sender: "getting coffee", "walking
+ * home", "at the Fence". These four are only the starting suggestions. Every
+ * moment anyone in your pairs and groups has used shows up as a chip too, so
+ * a moment becomes an album across friends.
+ */
+export const DEFAULT_MOMENTS = ['getting coffee', 'walking home', 'studying', 'at home'] as const;
+export type LockContext = string;
+export const MAX_MOMENT_LENGTH = 40;
 
-export const CONTEXT_LABELS: Record<LockContext, string> = {
-  coffee: 'getting coffee',
-  'walking-home': 'walking home',
-  studying: 'studying',
-  home: 'home',
-};
+/** Lowercase, single-spaced, capped. Two people typing "Getting Coffee" and "getting  coffee" mean the same moment. */
+export function normalizeMoment(input: string | null | undefined): string | null {
+  const value = (input ?? '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, MAX_MOMENT_LENGTH);
+  return value || null;
+}
 
-export function contextConditionLabel(context: LockContext): string {
-  return context === 'home'
-    ? 'Open when you get home'
-    : `Open when you're ${CONTEXT_LABELS[context]}`;
+export function contextConditionLabel(moment: string): string {
+  const m = normalizeMoment(moment) ?? '';
+  if (m === 'at home') return 'Open when you get home';
+  return /^(at|in|on) /.test(m) ? `Open when you're ${m}` : `Open when you're ${m}`;
 }
 
 /** Namespaced access-token claim the post-login Action sets once MFA ran. */
@@ -84,7 +90,23 @@ export interface FriendDto {
   schoolId?: string;
   schoolName?: string;
   city?: string;
+  /** True on the response to POST /pair when the other person still has to accept. */
+  pending?: boolean;
 }
+
+/** Someone who entered your code. Nothing is shared until you accept. */
+export interface FriendRequestDto {
+  from: FriendDto;
+  createdAt: string;
+}
+
+/**
+ * "Open together" between two people is a trade. The recipient stashes
+ * something back first; the original sender then starts the opening; the
+ * recipient opens at the same moment from the notification. If the sender is
+ * left waiting this long, their side opens anyway and the recipient is told.
+ */
+export const TOGETHER_WAIT_MS = 60_000;
 
 export interface LockRecipientDto {
   id: string;
@@ -113,6 +135,14 @@ export interface LockDto {
   contextMetByName: string | null;
   /** Sender asked for a second key: confirm needs an MFA-backed token. */
   requiresMfa: boolean;
+  /** Set on the recipient's stash-back: the original TOGETHER lock it answers. Opens with it. */
+  replyToId: string | null;
+  /** Set on the original TOGETHER lock once the recipient has stashed back. */
+  replyId: string | null;
+  /** When the original sender started opening a pair TOGETHER lock. */
+  openingStartedAt: string | null;
+  /** The sender waited out TOGETHER_WAIT_MS and their side opened without the recipient. */
+  openedAlone: boolean;
   state: LockState;
   createdAt: string;
   unlockedAt: string | null;
@@ -134,6 +164,11 @@ export interface CreateLockRequest {
   conditionLabel?: string;
   context?: LockContext | null;
   requiresMfa?: boolean;
+  /**
+   * Answering a TOGETHER lock: the id of the lock this is stashed back for.
+   * The server forces TOGETHER and the original sender as the only recipient.
+   */
+  replyToId?: string;
   /**
    * A Spotify track id. The server re-resolves it against Spotify and stores
    * canonical metadata — the client never supplies the album art URL, so a
@@ -234,6 +269,8 @@ export const SOCKET_EVENTS = {
   lockUnlocked: 'lock:unlocked',
   lockUpdated: 'lock:updated',
   friendPaired: 'friend:paired',
+  /** Someone entered your code. Payload: FriendRequestDto. */
+  friendRequested: 'friend:requested',
   groupUpdated: 'group:updated',
 } as const;
 

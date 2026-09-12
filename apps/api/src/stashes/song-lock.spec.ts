@@ -62,6 +62,7 @@ describe('song locks hide their album art until unlocked', () => {
     const sender = await users.getOrCreate(maya);
     const recipient = await users.getOrCreate(jules);
     await friendships.pair(recipient, sender.pairingCode);
+    await friendships.accept(sender, recipient._id);
 
     const lock = await stashes.create(sender, {
       recipientIds: [recipient._id],
