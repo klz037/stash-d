@@ -28,6 +28,8 @@ export interface UserDto {
   locationUpdatedAt?: string;
   /** Whether Spotify is linked. The tokens themselves never leave the server. */
   spotifyConnected?: boolean;
+  /** Opt-in for device stash alerts (not shelf cards). */
+  stashAlertsEnabled?: boolean;
 }
 
 export interface FriendDto {
@@ -100,6 +102,47 @@ export interface UpdateProfileRequest {
   city?: string;
   weeklyRitual?: string;
   locationSharing?: boolean;
+  stashAlertsEnabled?: boolean;
+}
+
+export type StashAlertKind =
+  | 'athletics'
+  | 'tradition'
+  | 'food'
+  | 'event'
+  | 'news';
+
+export interface PushSubscriptionDto {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export interface StashAlertDto {
+  id: string;
+  title: string;
+  body: string;
+  kind: StashAlertKind;
+  friendId?: string;
+  friendName?: string;
+  schoolId?: string;
+  schoolName?: string;
+  sourceLabel?: string;
+  sourceUrl?: string;
+  suggestedCondition?: string;
+  createdAt: string;
+}
+
+export interface NotificationsStatusDto {
+  enabled: boolean;
+  pushConfigured: boolean;
+  vapidPublicKey?: string;
+  sentToday: number;
+  dailyBudget: number;
+  pending: StashAlertDto[];
 }
 
 export interface UpdateLocationRequest {

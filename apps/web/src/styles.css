@@ -671,3 +671,18 @@ button {
   object-fit: cover;
   flex: none;
 }
+
+.hint .link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hint .link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

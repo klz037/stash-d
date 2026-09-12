@@ -78,6 +78,7 @@ export class UsersService {
           ? user.locationUpdatedAt.toISOString()
           : undefined,
       spotifyConnected: Boolean(user.spotify?.refreshToken),
+      stashAlertsEnabled: Boolean(user.stashAlertsEnabled),
     };
   }
 
@@ -90,6 +91,7 @@ export class UsersService {
       city?: string;
       weeklyRitual?: string;
       locationSharing?: boolean;
+      stashAlertsEnabled?: boolean;
     },
   ): Promise<UserDocument> {
     if (patch.displayName !== undefined) {
@@ -112,8 +114,15 @@ export class UsersService {
         user.locationUpdatedAt = undefined;
       }
     }
+    if (patch.stashAlertsEnabled !== undefined) {
+      user.stashAlertsEnabled = patch.stashAlertsEnabled;
+    }
     await user.save();
     return user;
+  }
+
+  async listAlertOptIns(): Promise<UserDocument[]> {
+    return this.userModel.find({ stashAlertsEnabled: true }).exec();
   }
 
   async updateLocation(
