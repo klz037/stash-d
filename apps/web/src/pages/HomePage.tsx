@@ -451,15 +451,19 @@ export function HomePage() {
   const scopedSent = useMemo(() => sent.filter(inScope), [sent, inScope]);
   const empty = inbox.length === 0;
 
-  const waitingContexts = useMemo(
-    () =>
-      new Set(
-        inbox
-          .filter((lock) => lock.state !== 'UNLOCKED' && lock.context && !lock.contextMetAt)
-          .map((lock) => lock.context as LockContext),
-      ),
-    [inbox],
-  );
+  // Contexts on sealed cards addressed to me: still waiting for "I'm here",
+  // or already told. Both stay visible until the card opens, so tapping a
+  // chip doesn't make the whole row vanish.
+  const { waitingContexts, metContexts } = useMemo(() => {
+    const waiting = new Set<LockContext>();
+    const met = new Set<LockContext>();
+    for (const lock of inbox) {
+      if (lock.state === 'UNLOCKED' || !lock.context) continue;
+      (lock.contextMetAt ? met : waiting).add(lock.context);
+    }
+    for (const item of waiting) met.delete(item);
+    return { waitingContexts: waiting, metContexts: met };
+  }, [inbox]);
   const mySky: Sky | null = me?.schoolId ? (skies[me.schoolId] ?? null) : null;
   const skyPrompts = useMemo(() => {
     if (!me) {
@@ -888,20 +892,26 @@ export function HomePage() {
             </div>
           ) : null}
 
-          {waitingContexts.size > 0 ? (
-            <div className="here-row" aria-label="I'm here">
-              <span>I'm here:</span>
-              {CONTEXTS.filter((item) => waitingContexts.has(item)).map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className="chip"
-                  disabled={hereBusy !== null}
-                  onClick={() => void here(item)}
-                >
-                  {hereBusy === item ? '…' : CONTEXT_LABELS[item]}
-                </button>
-              ))}
+          {waitingContexts.size + metContexts.size > 0 ? (
+            <div className="here-row" aria-label="Where are you?">
+              <span>Where are you?</span>
+              {CONTEXTS.filter((item) => waitingContexts.has(item) || metContexts.has(item)).map(
+                (item) => {
+                  const done = metContexts.has(item);
+                  return (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`chip ${done ? 'active' : ''}`}
+                      disabled={hereBusy !== null || done}
+                      title={done ? 'Told them. Hold the card when ready.' : undefined}
+                      onClick={() => void here(item)}
+                    >
+                      {hereBusy === item ? '…' : `${done ? '✓ ' : ''}${CONTEXT_LABELS[item]}`}
+                    </button>
+                  );
+                },
+              )}
             </div>
           ) : null}
 

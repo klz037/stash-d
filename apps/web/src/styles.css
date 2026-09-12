@@ -49,7 +49,7 @@ button {
 
 .phone {
   width: min(100%, 420px);
-  min-height: calc(100dvh - 32px);
+  height: calc(100dvh - 32px);
   background: linear-gradient(180deg, #f7f0e2 0%, #efe4cc 100%);
   border: 1px solid var(--line);
   border-radius: 28px;
@@ -94,6 +94,7 @@ button {
 
 .pane-track {
   flex: 1;
+  min-height: 0;
   display: flex;
   width: 200%;
   transform: translateX(-50%);
@@ -106,8 +107,9 @@ button {
 
 .pane {
   width: 50%;
-  padding: 8px 20px 108px;
+  padding: 8px 16px 124px;
   overflow: auto;
+  height: 100%;
 }
 
 .lede {
@@ -200,9 +202,15 @@ button {
 }
 
 .feed {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 12px;
+  align-items: start;
+}
+
+.feed > .empty,
+.feed > .hint {
+  grid-column: 1 / -1;
 }
 
 /* --- the polaroid -------------------------------------------------------
@@ -218,13 +226,14 @@ button {
     0 1px 0 rgba(255, 255, 255, 0.9) inset,
     0 14px 30px rgba(70, 42, 20, 0.22),
     0 2px 4px rgba(70, 42, 20, 0.12);
-  padding: 14px 14px 16px;
+  padding: 8px 8px 10px;
   position: relative;
   touch-action: none;
   user-select: none;
   transform: rotate(var(--tilt));
   transition: transform 180ms ease, box-shadow 180ms ease;
-  margin: 6px 6px 10px;
+  margin: 4px 2px 6px;
+  min-width: 0;
 }
 
 .polaroid.holdable:active {
@@ -284,7 +293,7 @@ button {
 }
 
 .undeveloped-hint {
-  font-size: 0.78rem;
+  font-size: 0.66rem;
   letter-spacing: 0.06em;
   text-transform: lowercase;
   text-align: center;
@@ -305,14 +314,15 @@ button {
 
 /* The white margin under the photo: the condition, in marker. */
 .caption {
-  padding: 14px 4px 0;
-  min-height: 74px;
+  padding: 10px 2px 0;
+  min-height: 58px;
 }
 
 .condition {
   font-family: Caveat, cursive;
-  font-size: 1.7rem;
+  font-size: 1.2rem;
   line-height: 1.1;
+  overflow-wrap: anywhere;
   margin: 0;
   color: #1c1612;
   transform: rotate(-0.6deg);
@@ -323,16 +333,23 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 8px;
+  margin-top: 6px;
   color: var(--ink-soft);
-  font-size: 0.74rem;
+  font-size: 0.62rem;
   letter-spacing: 0.02em;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }
 
 .revealed-text {
   margin: 14px 12px 0;
   font-size: 1rem;
   line-height: 1.45;
+}
+
+.ring.ring {
+  width: 84px;
+  height: 84px;
 }
 
 .ring {
@@ -354,7 +371,9 @@ button {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 18px;
+  bottom: 26px;
+  z-index: 4;
+  pointer-events: none;
   display: flex;
   justify-content: center;
 }
@@ -1077,4 +1096,47 @@ button {
   font-size: 0.82rem;
   color: var(--ink);
   max-width: 60%;
+}
+
+.capture button {
+  pointer-events: auto;
+}
+
+/* Things inside a narrow print. */
+.polaroid .revealed-text {
+  font-size: 0.82rem;
+  margin: 8px 2px 0;
+}
+
+.polaroid .revealed-text.on-print {
+  font-size: 0.8rem;
+  padding: 10px;
+}
+
+.polaroid .btn-ghost,
+.polaroid .btn {
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  margin-top: 6px;
+}
+
+.polaroid .field {
+  margin: 8px 0 0;
+  gap: 6px;
+}
+
+.polaroid .field input {
+  padding: 8px;
+  font-size: 0.85rem;
+}
+
+.polaroid .sleeve {
+  width: 56px;
+  height: 56px;
+  margin: 0 0 4px;
+}
+
+.holders .dot {
+  width: 8px;
+  height: 8px;
 }

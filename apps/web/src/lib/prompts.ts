@@ -320,29 +320,32 @@ export function buildPrompts(input: {
 
   const mySchool = schools.find((school) => school.id === input.me.schoolId);
   if (mySchool) {
-    for (const event of mySchool.events) {
-      const when = new Date(`${event.date}T12:00:00`);
-      const delta = daysBetween(now, when);
-      if (delta < 0 || delta > 14) continue;
-      const friend = friends[0];
-      if (!friend) break;
-      const whenLabel = delta === 0 ? 'today' : `in ${delta} day${delta === 1 ? '' : 's'}`;
+    // Only the nearest thing on your own calendar, and only inside a week.
+    // Titled with the school so it never reads as a generic "add/drop deadline".
+    const nextEvent = mySchool.events
+      .map((event) => ({ ...event, delta: daysBetween(now, new Date(`${event.date}T12:00:00`)) }))
+      .filter((event) => event.delta >= 0 && event.delta <= 7)
+      .sort((a, b) => a.delta - b.delta)[0];
+    const friend = friends[0];
+    if (nextEvent && friend) {
+      const { delta } = nextEvent;
+      const whenLabel = delta === 0 ? 'today' : delta === 1 ? 'tomorrow' : `in ${delta} days`;
       const body =
-        event.kind === 'stress'
-          ? `${mySchool.name}'s ${event.label} is ${whenLabel}. Stash something ${friend.displayName} can open when it hits.`
-          : event.kind === 'lull'
-            ? `${event.label} at ${mySchool.name}. Soft day — send ${friend.displayName} something quiet.`
-            : `${event.label} at ${mySchool.name}. Mark it with a polaroid for ${friend.displayName}.`;
+        nextEvent.kind === 'stress'
+          ? `Your ${nextEvent.label} is ${whenLabel}. Stash something ${friend.displayName} can open when it's over.`
+          : nextEvent.kind === 'lull'
+            ? `${nextEvent.label} ${whenLabel}. Soft day — send ${friend.displayName} something quiet.`
+            : `${nextEvent.label} ${whenLabel}. Mark it with a polaroid for ${friend.displayName}.`;
       push({
-        id: `school-${mySchool.id}-${event.date}`,
+        id: `school-${mySchool.id}-${nextEvent.date}`,
         kind: 'tier1',
-        emotion: event.kind,
-        title: event.label,
+        emotion: nextEvent.kind,
+        title: `${mySchool.name}: ${nextEvent.label} ${whenLabel}`,
         body,
         friendId: friend.id,
         friendName: friend.displayName,
         sourceUrl: mySchool.sourceUrl,
-        triggerKey: `school:${mySchool.id}:${event.date}:${event.kind}`,
+        triggerKey: `school:${mySchool.id}:${nextEvent.date}:${nextEvent.kind}`,
       });
     }
 
