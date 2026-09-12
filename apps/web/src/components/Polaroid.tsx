@@ -1,5 +1,5 @@
 import { HOLD_TO_UNLOCK_MS, LockDto } from '@stashd/shared';
-import { PointerEvent, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { timeAgo } from '../lib/time';
 
 export function Polaroid({
@@ -20,6 +20,7 @@ export function Polaroid({
   const [conditionDraft, setConditionDraft] = useState('');
   const frame = useRef<number | null>(null);
   const started = useRef<number | null>(null);
+  const progressRef = useRef(0);
   const isRecipient = lock.recipientId === viewerId;
   const needsCondition =
     lock.conditionType === 'RECIPIENT_SET' &&
@@ -39,6 +40,7 @@ export function Polaroid({
     }
     started.current = null;
     if (!completed) {
+      progressRef.current = 0;
       setProgress(0);
     }
   }
@@ -48,12 +50,14 @@ export function Polaroid({
       return;
     }
     const next = Math.min(1, (Date.now() - started.current) / HOLD_TO_UNLOCK_MS);
+    progressRef.current = next;
     setProgress(next);
     if (next >= 1) {
       stopHold(true);
       setBusy(true);
       void onConfirm(lock.id).finally(() => {
         setBusy(false);
+        progressRef.current = 0;
         setProgress(0);
       });
       return;
@@ -61,20 +65,28 @@ export function Polaroid({
     frame.current = requestAnimationFrame(tick);
   }
 
-  function onPointerDown(event: PointerEvent<HTMLElement>) {
-    if (!canHold || busy) {
+  function startHold() {
+    if (!canHold || busy || started.current) {
       return;
     }
-    event.currentTarget.setPointerCapture(event.pointerId);
     started.current = Date.now();
     frame.current = requestAnimationFrame(tick);
   }
 
-  function onPointerUp() {
-    if (progress < 1) {
+  function releaseHold() {
+    if (started.current && progressRef.current < 1) {
       stopHold(false);
     }
   }
+
+  useEffect(() => {
+    window.addEventListener('pointerup', releaseHold);
+    window.addEventListener('mouseup', releaseHold);
+    return () => {
+      window.removeEventListener('pointerup', releaseHold);
+      window.removeEventListener('mouseup', releaseHold);
+    };
+  });
 
   const yours =
     viewerId === lock.senderId ? lock.senderConfirmed : lock.recipientConfirmed;
@@ -85,9 +97,11 @@ export function Polaroid({
   return (
     <article
       className="polaroid"
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerDown={startHold}
+      onMouseDown={startHold}
+      onPointerUp={releaseHold}
+      onMouseUp={releaseHold}
+      onPointerCancel={releaseHold}
     >
       <div className={`frame ${lock.state === 'UNLOCKED' ? 'unlocked' : ''}`}>
         {lock.state === 'UNLOCKED' && lock.imageUrl ? (
