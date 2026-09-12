@@ -13,6 +13,11 @@
     "rootDir": "./src",
     "baseUrl": "./",
     "incremental": true,
+    // Keep the incremental cache inside dist. nest-cli sets deleteOutDir, so a
+    // buildinfo stored outside dist survives the wipe, convinces tsc every file
+    // is already emitted, and leaves dist empty — `nest start` then dies with
+    // "Cannot find module dist/main". Same lifetime, same directory.
+    "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
     "skipLibCheck": true,
     "strictNullChecks": true,
     "noImplicitAny": true,

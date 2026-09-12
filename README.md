@@ -1,6 +1,6 @@
 # stash'd
 
-A lock you send across a distance. You *stash* something — a note, a photo, a memory — and what exists afterward is a **lock**. Your friend holds to open it when the condition is met.
+A lock you send across a distance. You *stash* something — a note, a photo, a memory — and what exists afterward is a **stash**. Your friend holds to open it when the condition is met.
 
 This repo is a hackathon vertical slice: Auth0 login, pairing by code, create a lock, hold-to-unlock, and live Socket.IO feedback when it opens.
 
@@ -22,11 +22,7 @@ States: `LOCKED` → (`READY` only for together-locks) → `UNLOCKED`. Once unlo
 
 You can only stash to **yourself** or someone you are **paired** with. Pairing is a 6-character code (`KRF-2M9` on screen, `KRF2M9` in the database). An invite link is the same code: `/pair/KRF2M9`.
 
-Resolved from the spec's open questions:
-
-1. Friendship is required to stash to someone else. Self-stash is always allowed (demo insurance).
-2. You cannot stash to someone who has not signed up yet.
-3. The sender is notified live when their lock is opened.
+The spec's three open questions are resolved — friendship is required, you cannot stash to someone who hasn't signed up, and the sender is told live when their lock opens. The answers and their reasoning live in [`SPEC.md`](./SPEC.md#resolved), not here, so there is one place to read them.
 
 ## Stack
 
@@ -118,7 +114,7 @@ The JWT guard is on every domain route. `GET /api/me` without a bearer token ret
 ## Demo loop
 
 1. Two browsers, two Auth0 users.
-2. Empty shelf shows your pairing code. Friend types it (or opens `/pair/XXXXXX`).
+2. Empty Stash shows your pairing code. Friend types it (or opens `/pair/XXXXXX`).
 3. Capture (bottom shutter) → skip or take a photo → write a note → pick them → pick a condition → stash.
 4. Friend sees a sealed polaroid. Hold ~1.5 seconds.
 5. Content is revealed. Sender gets a live "unlocked" toast. Friend can stash something back.
@@ -143,11 +139,13 @@ POST   /api/locks/:id/condition
 
 Socket.IO (same origin / proxied) authenticates the access token on connect:
 
-`lock:created` · `lock:ready` · `lock:unlocked` · `lock:updated` · `friend:paired` · `presence:update`
+`lock:created` · `lock:ready` · `lock:unlocked` · `lock:updated` · `friend:paired`
+
+Presence is tracked in memory but deliberately not broadcast — it is returned only by `GET /api/friends`, scoped to people you are paired with.
 
 ## UI notes
 
-Phone-width (~420px), no nav bar, one accent on the polaroid, handwriting font only on the condition. Pairing lives on the empty shelf and as "Add someone" in capture — see `PAIRING.md`.
+Phone-width (~420px), no nav bar, one accent on the polaroid, handwriting font only on the condition. Pairing lives on the empty Stash and as "Add someone" in capture — see `PAIRING.md`.
 
 ## Out of scope (on purpose)
 
