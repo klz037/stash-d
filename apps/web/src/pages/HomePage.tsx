@@ -301,26 +301,6 @@ export function HomePage() {
   }
 
   const viewerId = me?.id ?? authUser?.sub ?? '';
-  // The API finishes the Spotify handshake and sends the browser back here.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const result = params.get('spotify');
-    if (!result) {
-      return;
-    }
-    toast(
-      result === 'connected'
-        ? 'Spotify connected.'
-        : result === 'declined'
-          ? 'Spotify stays disconnected.'
-          : 'Could not connect Spotify. Try again.',
-    );
-    if (result === 'connected') {
-      void refresh();
-    }
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }, [refresh, toast]);
-
   const empty = inbox.length === 0;
   const sortedInbox = useMemo(
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -607,7 +587,6 @@ export function HomePage() {
         <CaptureSheet
           friends={friends}
           groups={groups}
-          token={token}
           presetRecipientId={replyTo}
           presetConditionLabel={presetCondition}
           onClose={() => {
