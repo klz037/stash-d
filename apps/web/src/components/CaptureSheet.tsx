@@ -1,7 +1,6 @@
-import { ConditionType, FriendDto, GroupDto } from '@stashd/shared';
-import { ConditionType, FriendDto, SongDto } from '@stashd/shared';
-import { SongPicker } from './SongPicker';
+import { ConditionType, FriendDto, GroupDto, SongDto } from '@stashd/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SongPicker } from './SongPicker';
 
 type Step = 'media' | 'song' | 'text' | 'recipient' | 'condition';
 
@@ -196,6 +195,7 @@ export function CaptureSheet({
           groupId: target.id,
           text,
           imageUrl,
+          songTrackId: song?.trackId,
           conditionType: conditionType === 'TOGETHER' ? 'MANUAL' : conditionType,
           conditionLabel:
             conditionType === 'TOGETHER'
@@ -209,18 +209,11 @@ export function CaptureSheet({
           recipientId: recipient?.isSelf ? 'me' : target.id,
           text,
           imageUrl,
+          songTrackId: song?.trackId,
           conditionType,
           conditionLabel: conditionType === 'MANUAL' ? conditionLabel : undefined,
         });
       }
-      await onSubmit({
-        recipientId: recipient?.isSelf ? 'me' : recipientId,
-        text,
-        imageUrl,
-        songTrackId: song?.trackId,
-        conditionType,
-        conditionLabel: conditionType === 'MANUAL' ? conditionLabel : undefined,
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not stash that.');
       setBusy(false);

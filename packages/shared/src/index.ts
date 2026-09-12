@@ -101,13 +101,6 @@ export interface UpdateProfileRequest {
   weeklyRitual?: string;
   locationSharing?: boolean;
 }
-export const SOCKET_EVENTS = {
-  lockCreated: 'lock:created',
-  lockReady: 'lock:ready',
-  lockUnlocked: 'lock:unlocked',
-  lockUpdated: 'lock:updated',
-  friendPaired: 'friend:paired',
-} as const;
 
 export interface UpdateLocationRequest {
   /** Already rounded client-side (~1km). */

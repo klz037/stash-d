@@ -67,12 +67,32 @@ export class StashesService {
       recipientIds = [recipientId];
     }
 
+    // Never trust client-supplied song metadata — re-resolve from the id so the
+    // stored album art URL is always one Spotify actually gave us.
+    let song: LockSong | null = null;
+    if (dto.songTrackId) {
+      const resolved = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
+      song = {
+        trackId: resolved.trackId,
+        title: resolved.title,
+        artist: resolved.artist,
+        albumArtUrl: resolved.albumArtUrl,
+        spotifyUrl: resolved.spotifyUrl,
+        previewUrl: resolved.previewUrl,
+        durationMs: resolved.durationMs,
+      };
+    }
+
+    const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
+
     const docs = await this.lockModel.insertMany(
       recipientIds.map((recipientId) => ({
         senderId: actor._id,
         recipientId,
         text: dto.text ?? '',
         imageUrl: dto.imageUrl,
+        song,
+        mediaKind,
         conditionType: dto.conditionType,
         conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
         state: 'LOCKED' as const,
@@ -84,29 +104,6 @@ export class StashesService {
       })),
     );
     return docs as unknown as LockDocument[];
-    // Never trust client-supplied song metadata — re-resolve from the id so the
-    // stored album art URL is always one Spotify actually gave us.
-    let song: LockSong | null = null;
-    if (dto.songTrackId) {
-      song = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
-    }
-
-    const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
-
-    return this.lockModel.create({
-      senderId: actor._id,
-      recipientId,
-      text: dto.text ?? '',
-      imageUrl: dto.imageUrl,
-      song,
-      mediaKind,
-      conditionType: dto.conditionType,
-      conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-      state: 'LOCKED',
-      senderConfirmed: false,
-      recipientConfirmed: false,
-      unlockedAt: null,
-    });
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
