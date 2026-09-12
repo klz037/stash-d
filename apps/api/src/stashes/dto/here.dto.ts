@@ -1,7 +1,10 @@
-import { CONTEXTS, LockContext } from '@stashd/shared';
-import { IsIn } from 'class-validator';
+import { MAX_MOMENT_LENGTH } from '@stashd/shared';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class HereDto {
-  @IsIn([...CONTEXTS])
-  context!: LockContext;
+  /** A moment in the recipient's words. Matched against locks after normalizing. */
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(MAX_MOMENT_LENGTH)
+  context!: string;
 }

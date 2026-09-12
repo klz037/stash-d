@@ -21,9 +21,14 @@ export function PairPage() {
     void (async () => {
       try {
         const token = await getAccessTokenSilently();
-        await api.pair(token, code);
+        const friend = await api.pair(token, code);
         if (!cancelled) {
-          navigate('/', { replace: true });
+          if (friend.pending) {
+            setStatus(`Request sent to ${friend.displayName}.`);
+            window.setTimeout(() => navigate('/', { replace: true }), 1400);
+          } else {
+            navigate('/', { replace: true });
+          }
         }
       } catch (err) {
         if (!cancelled) {

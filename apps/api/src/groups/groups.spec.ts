@@ -46,6 +46,7 @@ describe('groups', () => {
     const jules = await users.getOrCreate({ sub: 'auth0|jules', name: 'Jules' });
     const sam = await users.getOrCreate({ sub: 'auth0|sam', name: 'Sam' });
     await friendships.pair(jules, maya.pairingCode);
+    await friendships.accept(maya, jules._id);
 
     // Sam is nobody's friend yet: cannot be a starting member.
     await expect(

@@ -125,7 +125,11 @@ async function main() {
       const [userAId, userBId] = [users[i].sub, users[j].sub].sort();
       const r = await Friendships.updateOne(
         { userAId, userBId },
-        { $setOnInsert: { userAId, userBId, createdAt: now, updatedAt: now } },
+        {
+          $setOnInsert: { userAId, userBId, createdAt: now, updatedAt: now },
+          // Seeded pairs are already accepted; nobody should have to tap through requests on stage.
+          $set: { status: 'ACCEPTED', requestedBy: null },
+        },
         { upsert: true },
       );
       if (r.upsertedCount) pairs += 1;

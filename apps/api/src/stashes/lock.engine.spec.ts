@@ -3,6 +3,7 @@ import {
   canConfirm,
   canSeeContent,
   canSetCondition,
+  holdBlockedReason,
   remainingHolds,
 } from './lock.engine';
 
@@ -13,6 +14,8 @@ const together = {
   conditionLabel: 'Open together',
   state: 'LOCKED' as const,
   confirmedIds: [] as string[],
+  replyToId: null,
+  replyId: null,
 };
 
 describe('lock engine', () => {
@@ -30,16 +33,43 @@ describe('lock engine', () => {
     expect(applyConfirm(lock, 'jules').state).toBe('UNLOCKED');
   });
 
-  it('moves TOGETHER locks LOCKED → READY → UNLOCKED', () => {
-    expect(canConfirm(together, 'maya')).toBe(true);
-    const ready = applyConfirm(together, 'maya');
-    expect(ready.state).toBe('READY');
-    expect(ready.confirmedIds).toEqual(['maya']);
-    expect(canConfirm({ ...together, ...ready }, 'maya')).toBe(false);
+  describe('pair TOGETHER is a trade', () => {
+    it('nobody can hold until the recipient has stashed back', () => {
+      expect(canConfirm(together, 'maya')).toBe(false);
+      expect(canConfirm(together, 'jules')).toBe(false);
+      expect(holdBlockedReason(together, 'jules')).toBe('stash something back first');
+      expect(holdBlockedReason(together, 'maya')).toBe('waiting for them to stash back');
+    });
 
-    const unlocked = applyConfirm({ ...together, ...ready }, 'jules');
-    expect(unlocked.state).toBe('UNLOCKED');
-    expect(unlocked.confirmedIds).toEqual(['maya', 'jules']);
+    it('then only the sender can start, moving it to READY', () => {
+      const answered = { ...together, replyId: 'reply-1' };
+      expect(canConfirm(answered, 'jules')).toBe(false);
+      expect(holdBlockedReason(answered, 'jules')).toBe('waiting for them to start');
+      expect(canConfirm(answered, 'maya')).toBe(true);
+
+      const started = applyConfirm(answered, 'maya');
+      expect(started.state).toBe('READY');
+      expect(started.startedOpening).toBe(true);
+      expect(started.unlockedAt).toBeNull();
+    });
+
+    it('then only the recipient can finish, and the sender cannot hold again', () => {
+      const ready = { ...together, replyId: 'reply-1', state: 'READY' as const, confirmedIds: ['maya'] };
+      expect(canConfirm(ready, 'maya')).toBe(false);
+      expect(canConfirm(ready, 'jules')).toBe(true);
+      const done = applyConfirm(ready, 'jules');
+      expect(done.state).toBe('UNLOCKED');
+      expect(done.startedOpening).toBe(false);
+      expect(done.unlockedAt).not.toBeNull();
+    });
+
+    it('a stash-back is never held on its own', () => {
+      const reply = { ...together, senderId: 'jules', recipientIds: ['maya'], replyToId: 'orig-1' };
+      expect(canConfirm(reply, 'jules')).toBe(false);
+      expect(canConfirm(reply, 'maya')).toBe(false);
+      expect(holdBlockedReason(reply, 'maya')).toBe('opens with the one it answers');
+      expect(remainingHolds(reply)).toBe(0);
+    });
   });
 
   it('needs every participant on a group TOGETHER lock', () => {
@@ -81,12 +111,11 @@ describe('lock engine', () => {
     );
   });
 
-  it('counts the sender once when they are also a recipient', () => {
-    const us = { ...together, recipientIds: ['maya', 'jules'] };
-    expect(remainingHolds(us)).toBe(2);
+  it('counts the sender once when they are also a recipient in a group', () => {
+    const us = { ...together, recipientIds: ['maya', 'jules', 'sam'] };
+    expect(remainingHolds(us)).toBe(3);
     const ready = applyConfirm(us, 'maya');
     expect(ready.state).toBe('READY');
-    expect(applyConfirm({ ...us, ...ready }, 'jules').state).toBe('UNLOCKED');
   });
 
   it('blocks RECIPIENT_SET unlock until a condition is written', () => {

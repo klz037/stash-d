@@ -1,10 +1,8 @@
 import {
   CalendarDto,
-  CONTEXT_LABELS,
-  CONTEXTS,
   FriendDto,
+  FriendRequestDto,
   GroupDto,
-  LockContext,
   LockDto,
   PromptDto,
   SOCKET_EVENTS,
@@ -32,12 +30,23 @@ import { describeSky, fetchSky, localClock, Sky } from '../lib/weather';
 
 const NOTIFIED_KEY = 'stashd.skyNotified';
 
-/** Which menu is open. Only one at a time. */
 type Menu = 'none' | 'more' | 'profile';
-/** Inside the ☰ menu: the root list, or one of its screens. */
-type MoreView = 'root' | 'create' | 'join' | 'created' | 'list';
-/** What the feed shows: everything, one group, or one pair. */
-type Scope = { kind: 'all' } | { kind: 'group'; id: string } | { kind: 'pair'; id: string };
+type MoreView = 'root' | 'friend' | 'requests' | 'create' | 'join' | 'created' | 'list';
+type Scope =
+  | { kind: 'all' }
+  | { kind: 'group'; id: string }
+  | { kind: 'pair'; id: string }
+  | { kind: 'moment'; id: string };
+
+/**
+ * Something that needs a person's answer right now: a friend request, or a
+ * friend opening an "open together". Shown one at a time as a sheet, and
+ * counted on the red dot by the ☰ menu.
+ */
+type Alert =
+  | { kind: 'request'; id: string; request: FriendRequestDto }
+  | { kind: 'opening'; id: string; lock: LockDto }
+  | { kind: 'openedAlone'; id: string; lock: LockDto };
 
 function upsertLock(list: LockDto[], next: LockDto) {
   const index = list.findIndex((item) => item.id === next.id);
@@ -66,6 +75,7 @@ export function HomePage() {
   const [me, setMe] = useState<UserDto | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [groups, setGroups] = useState<GroupDto[]>([]);
+  const [requests, setRequests] = useState<FriendRequestDto[]>([]);
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
   const [calendar, setCalendar] = useState<CalendarDto | null>(null);
@@ -74,8 +84,10 @@ export function HomePage() {
   const [scope, setScope] = useState<Scope>({ kind: 'all' });
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
+  const [replyToLockId, setReplyToLockId] = useState<string>();
   const [pairError, setPairError] = useState('');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [menu, setMenu] = useState<Menu>('none');
   const [moreView, setMoreView] = useState<MoreView>('root');
   const [nameDraft, setNameDraft] = useState('');
@@ -83,14 +95,17 @@ export function HomePage() {
   const [groupCode, setGroupCode] = useState('');
   const [groupBusy, setGroupBusy] = useState(false);
   const [createdGroup, setCreatedGroup] = useState<GroupDto | null>(null);
-  const [hereBusy, setHereBusy] = useState<LockContext | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [hereBusy, setHereBusy] = useState<string | null>(null);
   const [promptTick, setPromptTick] = useState(0);
   const [clockTick, setClockTick] = useState(0);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
   const sentRef = useRef<LockDto[]>([]);
+  const inboxRef = useRef<LockDto[]>([]);
   sentRef.current = sent;
+  inboxRef.current = inbox;
 
   const toast = useCallback((text: string) => {
     const id = Date.now() + Math.random();
@@ -99,6 +114,27 @@ export function HomePage() {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, 3200);
   }, []);
+
+  const pushAlert = useCallback((alert: Alert) => {
+    setAlerts((current) => (current.some((a) => a.id === alert.id) ? current : [...current, alert]));
+  }, []);
+  const dropAlert = useCallback((id: string) => {
+    setAlerts((current) => current.filter((a) => a.id !== id));
+  }, []);
+
+  const copy = useCallback(
+    async (key: string, text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(key);
+        toast('✓ Copied');
+        window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1600);
+      } catch {
+        toast('Could not copy. Long-press to select it instead.');
+      }
+    },
+    [toast],
+  );
 
   const token = useCallback(async () => {
     const value = await getAccessTokenSilently();
@@ -114,6 +150,18 @@ export function HomePage() {
     }
   }, [token]);
 
+  const loadRequests = useCallback(async () => {
+    try {
+      const list = await api.friendRequests(tokenRef.current || (await token()));
+      setRequests(list);
+      for (const request of list) {
+        pushAlert({ kind: 'request', id: `request-${request.from.id}`, request });
+      }
+    } catch {
+      setRequests([]);
+    }
+  }, [token, pushAlert]);
+
   const refresh = useCallback(async () => {
     const access = await token();
     const [profile, friendList, incoming, outgoing] = await Promise.all([
@@ -126,13 +174,13 @@ export function HomePage() {
     setFriends(friendList);
     setInbox(incoming);
     setSent(outgoing);
-    await loadGroups();
+    await Promise.all([loadGroups(), loadRequests()]);
     try {
       setCalendar(await api.calendar(access));
     } catch {
       setCalendar(null);
     }
-  }, [token, loadGroups]);
+  }, [token, loadGroups, loadRequests]);
 
   refreshRef.current = refresh;
 
@@ -156,40 +204,67 @@ export function HomePage() {
         onConnect();
       }
 
+      const isPairTogether = (lock: LockDto) =>
+        lock.conditionType === 'TOGETHER' && lock.participantIds.length === 2 && !lock.replyToId;
+
       socket.on(SOCKET_EVENTS.lockCreated, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         toast(
-          lock.recipients.length > 1
-            ? `${lock.senderName} stashed something for ${lock.recipients.length} of you.`
-            : `${lock.senderName} stashed something for you.`,
+          lock.replyToId
+            ? `${lock.senderName} stashed back. Hold theirs to start opening.`
+            : lock.recipients.length > 1
+              ? `${lock.senderName} stashed something for ${lock.recipients.length} of you.`
+              : `${lock.senderName} stashed something for you.`,
         );
       });
       socket.on(SOCKET_EVENTS.lockReady, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
-        const left = lock.participantIds.length - lock.confirmedIds.length;
-        toast(
-          lock.participantIds.length > 2
-            ? `${lock.confirmedIds.length} holding. ${left} to go.`
-            : "They're holding with you.",
-        );
+        if (isPairTogether(lock)) {
+          // The DTO is shaped for me: senderName is "You" when I started it.
+          // Otherwise they just started, and this is the notification to open from.
+          if (lock.senderName !== 'You') {
+            pushAlert({ kind: 'opening', id: `opening-${lock.id}`, lock });
+          }
+        } else {
+          const left = lock.participantIds.length - lock.confirmedIds.length;
+          toast(
+            lock.participantIds.length > 2
+              ? `${lock.confirmedIds.length} holding. ${left} to go.`
+              : "They're holding with you.",
+          );
+        }
         void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUnlocked, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
+        dropAlert(`opening-${lock.id}`);
         toast(lock.contentHidden ? 'A lock just opened.' : 'Unlocked.');
         void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUpdated, (lock: LockDto) => {
-        const before = sentRef.current.find((item) => item.id === lock.id);
+        const before =
+          sentRef.current.find((item) => item.id === lock.id) ??
+          inboxRef.current.find((item) => item.id === lock.id);
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
         if (lock.contextMetAt && !before?.contextMetAt && lock.context && lock.contextMetByName) {
-          toast(
-            `${lock.contextMetByName} is ${CONTEXT_LABELS[lock.context]}. Your lock is ready to open.`,
-          );
+          toast(`${lock.contextMetByName} is ${lock.context}. Your lock is ready to open.`);
         }
+        if (lock.replyId && !before?.replyId && lock.senderName === 'You') {
+          toast(`${lock.recipientName} stashed back. Hold to start opening.`);
+        }
+        if (lock.openedAlone && !before?.openedAlone && lock.senderName !== 'You') {
+          dropAlert(`opening-${lock.id}`);
+          pushAlert({ kind: 'openedAlone', id: `alone-${lock.id}`, lock });
+        }
+      });
+      socket.on(SOCKET_EVENTS.friendRequested, (request: FriendRequestDto) => {
+        setRequests((current) =>
+          current.some((r) => r.from.id === request.from.id) ? current : [request, ...current],
+        );
+        pushAlert({ kind: 'request', id: `request-${request.from.id}`, request });
       });
       socket.on(SOCKET_EVENTS.friendPaired, () => {
         void refreshRef.current();
@@ -209,7 +284,7 @@ export function HomePage() {
       active = false;
       disconnectRealtime();
     };
-  }, [toast, token]);
+  }, [toast, token, pushAlert, dropAlert]);
 
   useEffect(() => {
     const needsPoll = [...inbox, ...sent].some((lock) => lock.state === 'READY');
@@ -294,6 +369,8 @@ export function HomePage() {
       const lock = await api.confirm(tokenRef.current || (await token()), id);
       setInbox((current) => upsertLock(current, lock));
       setSent((current) => upsertLock(current, lock));
+      dropAlert(`opening-${id}`);
+      dropAlert(`alone-${id}`);
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not unlock.');
     }
@@ -341,6 +418,39 @@ export function HomePage() {
     setPromptTick((value) => value + 1);
   }
 
+  async function pair(code: string) {
+    try {
+      setPairError('');
+      const friend = await api.pair(tokenRef.current || (await token()), code);
+      if (friend.pending) {
+        toast(`Request sent to ${friend.displayName}. They'll see it next time they open stash'd.`);
+      } else {
+        toast(`Paired with ${friend.displayName}.`);
+        await refresh();
+      }
+      setMenu('none');
+    } catch (err) {
+      setPairError(err instanceof Error ? err.message : 'Could not pair.');
+    }
+  }
+
+  async function answerRequest(request: FriendRequestDto, accept: boolean) {
+    try {
+      const access = tokenRef.current || (await token());
+      if (accept) {
+        await api.acceptRequest(access, request.from.id);
+        toast(`You and ${request.from.displayName} are paired.`);
+      } else {
+        await api.declineRequest(access, request.from.id);
+      }
+      setRequests((current) => current.filter((r) => r.from.id !== request.from.id));
+      dropAlert(`request-${request.from.id}`);
+      if (accept) await refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not answer that.');
+    }
+  }
+
   async function createGroup() {
     const name = groupName.trim();
     if (!name) return;
@@ -379,15 +489,15 @@ export function HomePage() {
     }
   }
 
-  async function here(context: LockContext) {
-    setHereBusy(context);
+  async function here(moment: string) {
+    setHereBusy(moment);
     try {
-      const result = await api.here(tokenRef.current || (await token()), context);
+      const result = await api.here(tokenRef.current || (await token()), moment);
       for (const lock of result.matched) {
         setInbox((current) => upsertLock(current, lock));
       }
       if (result.matched.length === 0) {
-        toast(`Nothing here is waiting for ${CONTEXT_LABELS[context]}.`);
+        toast(`Nothing here is waiting for ${moment}.`);
       } else {
         const senders = [...new Set(result.matched.map((lock) => lock.senderName))];
         toast(
@@ -406,6 +516,12 @@ export function HomePage() {
   function openMenu(next: Menu) {
     setMenu((current) => (current === next ? 'none' : next));
     setMoreView('root');
+  }
+
+  function openCapture(recipientId?: string, lockId?: string) {
+    setReplyTo(recipientId);
+    setReplyToLockId(lockId);
+    setCapturing(true);
   }
 
   const viewerId = me?.id ?? authUser?.sub ?? '';
@@ -432,11 +548,23 @@ export function HomePage() {
 
   const paired = friends.filter((friend) => !friend.isSelf);
 
-  // Scope: everything, one group (every participant is a member), or one pair.
+  const knownMoments = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const lock of [...inbox, ...sent].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      if (lock.context && !seen.has(lock.context)) {
+        seen.add(lock.context);
+        out.push(lock.context);
+      }
+    }
+    return out;
+  }, [inbox, sent]);
+
   const inScope = useCallback(
     (lock: LockDto) => {
       if (scope.kind === 'all') return true;
       if (scope.kind === 'pair') return lock.participantIds.includes(scope.id);
+      if (scope.kind === 'moment') return lock.context === scope.id;
       const group = groups.find((item) => item.id === scope.id);
       if (!group) return true;
       return lock.participantIds.every((id) => group.memberIds.includes(id));
@@ -451,19 +579,17 @@ export function HomePage() {
   const scopedSent = useMemo(() => sent.filter(inScope), [sent, inScope]);
   const empty = inbox.length === 0;
 
-  // Contexts on sealed cards addressed to me: still waiting for "I'm here",
-  // or already told. Both stay visible until the card opens, so tapping a
-  // chip doesn't make the whole row vanish.
-  const { waitingContexts, metContexts } = useMemo(() => {
-    const waiting = new Set<LockContext>();
-    const met = new Set<LockContext>();
+  const { waitingMoments, metMoments } = useMemo(() => {
+    const waiting = new Set<string>();
+    const met = new Set<string>();
     for (const lock of inbox) {
       if (lock.state === 'UNLOCKED' || !lock.context) continue;
       (lock.contextMetAt ? met : waiting).add(lock.context);
     }
     for (const item of waiting) met.delete(item);
-    return { waitingContexts: waiting, metContexts: met };
+    return { waitingMoments: [...waiting], metMoments: [...met] };
   }, [inbox]);
+
   const mySky: Sky | null = me?.schoolId ? (skies[me.schoolId] ?? null) : null;
   const skyPrompts = useMemo(() => {
     if (!me) {
@@ -504,8 +630,10 @@ export function HomePage() {
 
   const school = schoolLocation(me?.schoolId);
   const needsName = Boolean(me && !me.displayNameSet);
-  const scopeValue =
-    scope.kind === 'all' ? 'all' : `${scope.kind}:${scope.id}`;
+  const scopeValue = scope.kind === 'all' ? 'all' : `${scope.kind}:${scope.id}`;
+  const inviteLink = me ? `${window.location.origin}/pair/${me.pairingCode}` : '';
+  const badge = requests.length + alerts.filter((a) => a.kind !== 'request').length;
+  const alert = alerts[0] ?? null;
 
   const nameForm = (
     <form
@@ -530,6 +658,37 @@ export function HomePage() {
     </form>
   );
 
+  const copyButton = (key: string, text: string, label: string, className = 'btn-ghost') => (
+    <button className={className} type="button" onClick={() => void copy(key, text)}>
+      {copied === key ? '✓ Copied' : label}
+    </button>
+  );
+
+  const requestRows = (
+    <>
+      {requests.length === 0 ? (
+        <p className="hint">No requests waiting.</p>
+      ) : (
+        requests.map((request) => (
+          <div className="menu-row" key={request.from.id}>
+            <span className="menu-link">
+              {request.from.displayName}
+              <small>{request.from.schoolName ?? request.from.city ?? 'wants to pair'}</small>
+            </span>
+            <span className="row-actions">
+              <button className="chip active" type="button" onClick={() => void answerRequest(request, true)}>
+                Accept
+              </button>
+              <button className="chip" type="button" onClick={() => void answerRequest(request, false)}>
+                No
+              </button>
+            </span>
+          </div>
+        ))
+      )}
+    </>
+  );
+
   return (
     <>
       <ToastStack toasts={toasts} />
@@ -541,15 +700,18 @@ export function HomePage() {
           <button
             className={`icon-btn ${menu === 'more' ? 'active' : ''}`}
             type="button"
-            aria-label="Groups and pairs"
+            aria-label={badge > 0 ? `Friends and groups, ${badge} waiting` : 'Friends and groups'}
+            aria-expanded={menu === 'more'}
             onClick={() => openMenu('more')}
           >
             <span className="burger" aria-hidden="true" />
+            {badge > 0 ? <span className="badge-dot" aria-hidden="true" /> : null}
           </button>
           <button
             className={`avatar ${menu === 'profile' ? 'active' : ''}`}
             type="button"
             aria-label="Profile"
+            aria-expanded={menu === 'profile'}
             onClick={() => openMenu('profile')}
           >
             {me?.picture ? <img src={me.picture} alt="" /> : initial(me?.displayName ?? '?')}
@@ -557,10 +719,23 @@ export function HomePage() {
         </div>
       </div>
 
+      {menu !== 'none' ? (
+        <div className="scrim" onClick={() => setMenu('none')} aria-hidden="true" />
+      ) : null}
+
       {menu === 'more' && me ? (
-        <div className="menu">
+        <div className="menu" role="menu">
           {moreView === 'root' ? (
             <>
+              {requests.length > 0 ? (
+                <button className="menu-item" type="button" onClick={() => setMoreView('requests')}>
+                  Friend requests
+                  <span className="menu-count pill">{requests.length}</span>
+                </button>
+              ) : null}
+              <button className="menu-item" type="button" onClick={() => setMoreView('friend')}>
+                Add a friend <span aria-hidden="true">›</span>
+              </button>
               <button className="menu-item" type="button" onClick={() => setMoreView('create')}>
                 Create a group <span aria-hidden="true">›</span>
               </button>
@@ -570,6 +745,33 @@ export function HomePage() {
               <button className="menu-item" type="button" onClick={() => setMoreView('list')}>
                 Groups &amp; pairs
                 <span className="menu-count">{groups.length + paired.length}</span>
+              </button>
+            </>
+          ) : null}
+
+          {moreView === 'requests' ? (
+            <>
+              <h4>Friend requests</h4>
+              {requestRows}
+              <button className="btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </>
+          ) : null}
+
+          {moreView === 'friend' ? (
+            <>
+              <div className="code-block" style={{ margin: '0 0 12px' }}>
+                <div>Your code</div>
+                <strong>{me.pairingCodeDisplay}</strong>
+                {copyButton('invite-menu', inviteLink, 'Copy invite link')}
+              </div>
+              <p className="lede" style={{ marginBottom: 8 }}>
+                Or enter theirs. They'll get a request to accept.
+              </p>
+              <PairingCodeInput error={pairError} onSubmit={pair} />
+              <button className="btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => setMoreView('root')}>
+                Back
               </button>
             </>
           ) : null}
@@ -609,16 +811,7 @@ export function HomePage() {
               <div>{createdGroup.name}</div>
               <strong>{createdGroup.inviteCodeDisplay}</strong>
               <p className="hint">Anyone who types this joins the group.</p>
-              <button
-                className="btn"
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard.writeText(createdGroup.inviteCode);
-                  toast('Code copied.');
-                }}
-              >
-                Copy code
-              </button>
+              {copyButton(`group-${createdGroup.id}`, createdGroup.inviteCode, 'Copy code', 'btn')}
               <button
                 className="btn-ghost"
                 type="button"
@@ -681,19 +874,16 @@ export function HomePage() {
                     <button
                       type="button"
                       className="chip"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(group.inviteCode);
-                        toast(`${group.name}: ${group.inviteCodeDisplay} copied.`);
-                      }}
+                      onClick={() => void copy(`code-${group.id}`, group.inviteCode)}
                     >
-                      {group.inviteCodeDisplay}
+                      {copied === `code-${group.id}` ? '✓ Copied' : group.inviteCodeDisplay}
                     </button>
                   </div>
                 ))
               )}
               <h4>Pairs</h4>
               {paired.length === 0 ? (
-                <p className="hint">Nobody yet. Your code is in your profile.</p>
+                <p className="hint">Nobody yet. Use “Add a friend”.</p>
               ) : (
                 paired.map((friend) => (
                   <div className="menu-row" key={friend.id}>
@@ -723,7 +913,7 @@ export function HomePage() {
       ) : null}
 
       {menu === 'profile' && me ? (
-        <div className="menu">
+        <div className="menu" role="menu">
           <div className="menu-profile">
             <span className="avatar">
               {me.picture ? <img src={me.picture} alt="" /> : initial(me.displayName)}
@@ -767,18 +957,7 @@ export function HomePage() {
           <div className="code-block" style={{ margin: '12px 0' }}>
             <div>Your code</div>
             <strong>{me.pairingCodeDisplay}</strong>
-            <button
-              className="btn-ghost"
-              type="button"
-              onClick={() => {
-                void navigator.clipboard.writeText(
-                  `${window.location.origin}/pair/${me.pairingCode}`,
-                );
-                toast('Invite link copied.');
-              }}
-            >
-              Copy invite link
-            </button>
+            {copyButton('invite-profile', inviteLink, 'Copy invite link')}
           </div>
           <button
             className="btn-ghost"
@@ -789,6 +968,62 @@ export function HomePage() {
           >
             Sign out
           </button>
+        </div>
+      ) : null}
+
+      {/* One thing that needs an answer, over everything else. */}
+      {alert && !capturing ? (
+        <div className="alert-sheet" role="dialog" aria-modal="true">
+          <div className="alert-card">
+            {alert.kind === 'request' ? (
+              <>
+                <span className="avatar">
+                  {alert.request.from.picture ? (
+                    <img src={alert.request.from.picture} alt="" />
+                  ) : (
+                    initial(alert.request.from.displayName)
+                  )}
+                </span>
+                <h3>{alert.request.from.displayName} wants to pair</h3>
+                <p className="lede">
+                  {alert.request.from.schoolName
+                    ? `${alert.request.from.schoolName}. `
+                    : ''}
+                  Accept and you can stash to each other.
+                </p>
+                <button className="btn" type="button" onClick={() => void answerRequest(alert.request, true)}>
+                  Accept
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
+                  Later
+                </button>
+              </>
+            ) : alert.kind === 'opening' ? (
+              <>
+                <h3>{alert.lock.senderName} is opening it now</h3>
+                <p className="lede">
+                  Open together and you both see each other's at the same moment. They'll wait a minute.
+                </p>
+                <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
+                  Open together
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
+                  Not now
+                </button>
+              </>
+            ) : (
+              <>
+                <h3>{alert.lock.senderName} opened it without you</h3>
+                <p className="lede">Yours is still sealed. Take a look when you're ready.</p>
+                <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
+                  Take a look
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
+                  Later
+                </button>
+              </>
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -864,8 +1099,9 @@ export function HomePage() {
                   const value = event.target.value;
                   if (value === 'all') setScope({ kind: 'all' });
                   else {
-                    const [kind, id] = value.split(':');
-                    setScope({ kind: kind as 'group' | 'pair', id });
+                    const index = value.indexOf(':');
+                    const kind = value.slice(0, index) as 'group' | 'pair' | 'moment';
+                    setScope({ kind, id: value.slice(index + 1) });
                   }
                 }}
               >
@@ -888,30 +1124,38 @@ export function HomePage() {
                     ))}
                   </optgroup>
                 ) : null}
+                {knownMoments.length > 0 ? (
+                  <optgroup label="Moments">
+                    {knownMoments.map((moment) => (
+                      <option key={moment} value={`moment:${moment}`}>
+                        {moment}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </div>
           ) : null}
 
-          {waitingContexts.size + metContexts.size > 0 ? (
-            <div className="here-row" aria-label="Where are you?">
-              <span>Where are you?</span>
-              {CONTEXTS.filter((item) => waitingContexts.has(item) || metContexts.has(item)).map(
-                (item) => {
-                  const done = metContexts.has(item);
-                  return (
-                    <button
-                      key={item}
-                      type="button"
-                      className={`chip ${done ? 'active' : ''}`}
-                      disabled={hereBusy !== null || done}
-                      title={done ? 'Told them. Hold the card when ready.' : undefined}
-                      onClick={() => void here(item)}
-                    >
-                      {hereBusy === item ? '…' : `${done ? '✓ ' : ''}${CONTEXT_LABELS[item]}`}
-                    </button>
-                  );
-                },
-              )}
+          {waitingMoments.length + metMoments.length > 0 ? (
+            <div className="here-row" aria-label="I'm here">
+              <span title="Some cards for you are tied to a moment. Tap it when you're there and the sender is told.">
+                I'm here:
+              </span>
+              {[...waitingMoments, ...metMoments].map((moment) => {
+                const done = metMoments.includes(moment);
+                return (
+                  <button
+                    key={moment}
+                    type="button"
+                    className={`chip ${done ? 'active' : ''}`}
+                    disabled={hereBusy !== null || done}
+                    onClick={() => void here(moment)}
+                  >
+                    {hereBusy === moment ? '…' : `${done ? '✓ ' : ''}${moment}`}
+                  </button>
+                );
+              })}
             </div>
           ) : null}
 
@@ -921,10 +1165,7 @@ export function HomePage() {
                 <PromptCard
                   key={prompt.id}
                   prompt={prompt}
-                  onStash={(friendId) => {
-                    setReplyTo(friendId);
-                    setCapturing(true);
-                  }}
+                  onStash={(friendId) => openCapture(friendId)}
                   onDismiss={(triggerKey) => {
                     const result = dismissPrompt(triggerKey);
                     setPromptTick((value) => value + 1);
@@ -946,40 +1187,19 @@ export function HomePage() {
                 <div className="code-block">
                   <div>Your code</div>
                   <strong>{me.pairingCodeDisplay}</strong>
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() =>
-                      void navigator.clipboard.writeText(
-                        `${window.location.origin}/pair/${me.pairingCode}`,
-                      )
-                    }
-                  >
-                    Copy invite link
-                  </button>
+                  {copyButton('invite-empty', inviteLink, 'Copy invite link', 'btn')}
                 </div>
               ) : null}
               <div className="rule">or</div>
-              <p className="lede">Enter a friend's code</p>
-              <PairingCodeInput
-                error={pairError}
-                onSubmit={async (code) => {
-                  try {
-                    setPairError('');
-                    await api.pair(tokenRef.current || (await token()), code);
-                    await refresh();
-                    toast('Paired.');
-                  } catch (err) {
-                    setPairError(err instanceof Error ? err.message : 'Could not pair.');
-                  }
-                }}
-              />
+              <p className="lede">Enter a friend's code. They'll get a request to accept.</p>
+              <PairingCodeInput error={pairError} onSubmit={pair} />
             </div>
           ) : (
             <div className="feed">
               {scopedInbox.length === 0 ? (
                 <p className="hint" style={{ textAlign: 'center' }}>
-                  Nothing here yet for this {scope.kind === 'group' ? 'group' : 'pair'}.
+                  Nothing here yet for this{' '}
+                  {scope.kind === 'group' ? 'group' : scope.kind === 'moment' ? 'moment' : 'pair'}.
                 </p>
               ) : null}
               {scopedInbox.map((lock) => (
@@ -989,10 +1209,7 @@ export function HomePage() {
                   viewerId={viewerId}
                   onConfirm={confirm}
                   onSetCondition={setCondition}
-                  onReply={(recipientId) => {
-                    setReplyTo(recipientId);
-                    setCapturing(true);
-                  }}
+                  onReply={(recipientId, lockId) => openCapture(recipientId, lockId)}
                 />
               ))}
             </div>
@@ -1000,16 +1217,11 @@ export function HomePage() {
         </section>
       </div>
 
-      <div className="capture">
-        <button
-          type="button"
-          aria-label="Capture"
-          onClick={() => {
-            setReplyTo(undefined);
-            setCapturing(true);
-          }}
-        />
-      </div>
+      {!capturing ? (
+        <div className="capture">
+          <button type="button" aria-label="Capture" onClick={() => openCapture()} />
+        </div>
+      ) : null}
 
       {capturing ? (
         <CaptureSheet
@@ -1017,10 +1229,12 @@ export function HomePage() {
           groups={groups}
           people={people}
           skies={skies}
+          knownMoments={knownMoments}
           eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 14).slice(0, 2)}
           campusFor={(schoolId) => campusFor(schoolId)}
           token={token}
           presetRecipientId={replyTo}
+          replyToId={replyToLockId}
           onClose={() => setCapturing(false)}
           onSubmit={async (input) => {
             const lock = await api.createLock(tokenRef.current || (await token()), input);
@@ -1030,11 +1244,14 @@ export function HomePage() {
             }
             setCapturing(false);
             toast(
-              lock.recipients.length > 1
-                ? `Stashed for ${lock.recipients.length} people.`
-                : 'Stashed.',
+              lock.replyToId
+                ? `Stashed back. ${lock.recipientName} starts the opening.`
+                : lock.recipients.length > 1
+                  ? `Stashed for ${lock.recipients.length} people.`
+                  : 'Stashed.',
             );
             setPromptTick((value) => value + 1);
+            void refresh();
           }}
         />
       ) : null}

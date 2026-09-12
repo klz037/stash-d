@@ -1,9 +1,9 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import {
   ConditionType,
-  CONTEXTS,
   LockContext,
   LockState,
+  MAX_MOMENT_LENGTH,
   MediaKind,
 } from '@stashd/shared';
 import { HydratedDocument } from 'mongoose';
@@ -50,7 +50,12 @@ export class Lock {
   @Prop({ type: [String], required: true, index: true })
   recipientIds: string[];
 
-  @Prop({ required: true })
+  /**
+   * The note. Optional: a photo or a song alone is a fine stash. Mongoose
+   * treats '' as missing for a required string, which is what 500'd every
+   * note-less stash.
+   */
+  @Prop({ type: String, default: '' })
   text: string;
 
   @Prop()
@@ -76,8 +81,8 @@ export class Lock {
   @Prop({ type: String, default: null })
   conditionLabel: string | null;
 
-  /** Context the sender attached to the condition, or null. */
-  @Prop({ type: String, enum: [...CONTEXTS, null], default: null })
+  /** The moment the sender tied this to, normalized free text ("getting coffee"), or null. */
+  @Prop({ type: String, default: null, maxlength: MAX_MOMENT_LENGTH })
   context: LockContext | null;
 
   /** Stamped when a recipient taps "I'm here" with a matching context. A timestamp, not a state. */
@@ -90,6 +95,24 @@ export class Lock {
   /** Sender asked for a second key. Confirm is refused unless the token carries the MFA claim. */
   @Prop({ default: false })
   requiresMfa: boolean;
+
+  /**
+   * Pair "open together" is a trade. The recipient's stash-back carries
+   * replyToId; the original carries replyId once it exists. They open as one.
+   */
+  @Prop({ type: String, default: null, index: true })
+  replyToId: string | null;
+
+  @Prop({ type: String, default: null })
+  replyId: string | null;
+
+  /** When the original sender started opening. The one-minute wait counts from here. */
+  @Prop({ type: Date, default: null })
+  openingStartedAt: Date | null;
+
+  /** The sender waited out the minute and their side opened without the recipient. */
+  @Prop({ default: false })
+  openedAlone: boolean;
 
   @Prop({
     required: true,

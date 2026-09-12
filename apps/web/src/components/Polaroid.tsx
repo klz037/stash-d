@@ -1,4 +1,4 @@
-import { CONTEXT_LABELS, HOLD_TO_UNLOCK_MS, LockDto } from '@stashd/shared';
+import { HOLD_TO_UNLOCK_MS, LockDto, TOGETHER_WAIT_MS } from '@stashd/shared';
 import { useEffect, useRef, useState } from 'react';
 import { timeAgo } from '../lib/time';
 
@@ -19,16 +19,19 @@ export function Polaroid({
   viewerId: string;
   onConfirm: (id: string) => Promise<void>;
   onSetCondition?: (id: string, label: string) => Promise<void>;
-  onReply?: (recipientId: string) => void;
+  /** Open capture addressed to the sender. `replyToId` is set when this answers an "open together". */
+  onReply?: (recipientId: string, replyToId?: string) => void;
 }) {
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
   const [conditionDraft, setConditionDraft] = useState('');
+  const [, setClock] = useState(0);
   const frame = useRef<number | null>(null);
   const started = useRef<number | null>(null);
   const progressRef = useRef(0);
 
   const isRecipient = lock.recipientIds.includes(viewerId);
+  const isSender = lock.senderId === viewerId;
   const isGroup = lock.recipients.length > 1;
   const sealed = lock.state !== 'UNLOCKED';
   const yours = lock.confirmedIds.includes(viewerId);
@@ -36,19 +39,45 @@ export function Polaroid({
   const othersDone = others.filter((id) => lock.confirmedIds.includes(id));
   const theirs = others.length > 0 && othersDone.length === others.length;
   const waitingOn = others.length - othersDone.length;
+  const otherName = isRecipient ? lock.senderName : lock.recipientName;
+
+  // The pair "open together" trade: two people, not itself a stash-back.
+  const isReply = Boolean(lock.replyToId);
+  const isPairTogether =
+    lock.conditionType === 'TOGETHER' && lock.participantIds.length === 2 && !isReply;
 
   const needsCondition =
     lock.conditionType === 'RECIPIENT_SET' &&
     !lock.conditionLabel &&
     isRecipient &&
     lock.state === 'LOCKED';
-  const canHold =
-    sealed &&
-    !needsCondition &&
-    (lock.conditionType === 'TOGETHER'
-      ? lock.participantIds.includes(viewerId) && !yours
-      : isRecipient);
+
+  let canHold = false;
+  if (sealed && !needsCondition) {
+    if (isReply) {
+      canHold = false;
+    } else if (isPairTogether) {
+      canHold = isSender
+        ? lock.state === 'LOCKED' && Boolean(lock.replyId)
+        : isRecipient && lock.state === 'READY';
+    } else if (lock.conditionType === 'TOGETHER') {
+      canHold = lock.participantIds.includes(viewerId) && !yours;
+    } else {
+      canHold = isRecipient;
+    }
+  }
   const here = sealed && Boolean(lock.contextMetAt);
+
+  // While the sender waits on a pair opening, tick so the countdown moves.
+  const waiting = isPairTogether && lock.state === 'READY' && !lock.openedAlone && Boolean(lock.openingStartedAt);
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const id = window.setInterval(() => setClock((v) => v + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [waiting]);
+  const secondsLeft = waiting
+    ? Math.max(0, Math.ceil((new Date(lock.openingStartedAt as string).getTime() + TOGETHER_WAIT_MS - Date.now()) / 1000))
+    : 0;
 
   function stopHold(completed: boolean) {
     if (frame.current) {
@@ -108,41 +137,65 @@ export function Polaroid({
   const showRing =
     sealed && (progress > 0 || busy || (lock.conditionType === 'TOGETHER' && lock.confirmedIds.length > 0));
 
-  const readyHint =
-    lock.state === 'READY'
-      ? yours
-        ? waitingOn === 1
-          ? 'Waiting on one more.'
-          : `Waiting on ${waitingOn} more.`
-        : isGroup
-          ? `${othersDone.length} of ${others.length} are holding. Your turn.`
-          : "They're waiting on you."
-      : null;
+  // What the undeveloped print says. Pair-together has its own script.
+  let hint: string;
+  if (here) {
+    hint =
+      lock.contextMetBy === viewerId
+        ? "you're here. hold to open"
+        : `${lock.contextMetByName ?? 'someone'} is ${lock.context ?? 'there'}`;
+  } else if (isReply) {
+    hint = lock.state === 'UNLOCKED' ? '' : `opens with ${otherName}'s`;
+  } else if (isPairTogether) {
+    if (lock.state === 'LOCKED') {
+      hint = !lock.replyId
+        ? isRecipient
+          ? 'stash something back to start'
+          : `waiting for ${otherName} to stash back`
+        : isSender
+          ? 'hold to start opening'
+          : `waiting for ${otherName} to start`;
+    } else if (lock.openedAlone) {
+      hint = isSender ? `opened without ${otherName}` : `${otherName} opened it without you. hold to look`;
+    } else {
+      hint = isSender
+        ? `opening… ${secondsLeft}s for ${otherName}`
+        : `${otherName} is opening now. hold to open together`;
+    }
+  } else if (lock.state === 'READY') {
+    hint = yours
+      ? waitingOn === 1
+        ? 'waiting on one more'
+        : `waiting on ${waitingOn} more`
+      : isGroup
+        ? `${othersDone.length} of ${others.length} holding. your turn`
+        : "they're waiting on you";
+  } else {
+    hint = canHold ? 'hold to develop' : lock.mediaKind === 'SONG' ? "a song, stash'd" : "stash'd";
+  }
 
-  const hereHint = here
-    ? lock.contextMetBy === viewerId
-      ? "You're here. Hold to open."
-      : `${lock.contextMetByName ?? 'Someone'} is ${
-          lock.context ? CONTEXT_LABELS[lock.context] : 'there'
-        }.`
-    : null;
-
-  const who = isRecipient ? lock.senderName : lock.recipientName;
   const kicker = isRecipient
     ? `from ${lock.senderName}${isGroup ? ` · to ${lock.recipientName}` : ''}`
     : `to ${lock.recipientName}`;
+
+  const showStashBack =
+    onReply && isRecipient && lock.senderId !== viewerId && (
+      lock.state === 'UNLOCKED' ||
+      (isPairTogether && lock.state === 'LOCKED' && !lock.replyId)
+    );
 
   return (
     <article
       className={`polaroid ${sealed ? 'sealed' : 'developed'} ${here ? 'here' : ''} ${
         canHold ? 'holdable' : ''
-      }`}
+      } ${waiting && isRecipient ? 'urgent' : ''}`}
       style={{ ['--tilt' as string]: `${tiltFor(lock.id)}deg` }}
       onPointerDown={startHold}
       onMouseDown={startHold}
       onPointerUp={releaseHold}
       onMouseUp={releaseHold}
       onPointerCancel={releaseHold}
+      onContextMenu={(event) => event.preventDefault()}
     >
       <div
         className={`frame ${lock.state === 'UNLOCKED' ? 'unlocked' : ''}`}
@@ -164,7 +217,7 @@ export function Polaroid({
                 <span className="sleeve-disc" />
               </div>
             ) : null}
-            {lock.conditionType === 'TOGETHER' && others.length > 0 ? (
+            {lock.conditionType === 'TOGETHER' && !isPairTogether && !isReply && others.length > 0 ? (
               <div className="holders" aria-label={`${lock.confirmedIds.length} of ${lock.participantIds.length} holding`}>
                 {others.map((id) => (
                   <span
@@ -174,9 +227,7 @@ export function Polaroid({
                 ))}
               </div>
             ) : null}
-            <span className="undeveloped-hint">
-              {hereHint ?? readyHint ?? (canHold ? 'hold to develop' : lock.mediaKind === 'SONG' ? 'a song' : 'sealed')}
-            </span>
+            <span className="undeveloped-hint">{hint}</span>
           </div>
         )}
         {showRing ? (
@@ -214,7 +265,6 @@ export function Polaroid({
         ) : null}
       </div>
 
-      {/* The white margin. Condition in marker, who and when small underneath. */}
       <div className="caption">
         <p className="condition">
           {lock.conditionLabel ?? (isRecipient ? 'You decide when this opens.' : 'They decide when it opens.')}
@@ -273,13 +323,13 @@ export function Polaroid({
           </button>
         </form>
       ) : null}
-      {lock.state === 'UNLOCKED' && onReply && isRecipient && lock.senderId !== viewerId ? (
+      {showStashBack ? (
         <button
-          className="btn-ghost"
+          className={sealed ? 'btn' : 'btn-ghost'}
           type="button"
-          onClick={() => onReply(lock.senderId)}
+          onClick={() => onReply?.(lock.senderId, sealed ? lock.id : undefined)}
         >
-          Stash something back for {who}
+          Stash back
         </button>
       ) : null}
     </article>

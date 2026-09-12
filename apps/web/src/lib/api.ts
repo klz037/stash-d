@@ -5,6 +5,7 @@ import type {
   CreateLockRequest,
   FriendDto,
   FriendNoteDto,
+  FriendRequestDto,
   GroupDto,
   HereResponse,
   LockContext,
@@ -75,10 +76,20 @@ export const api = {
       body: JSON.stringify(body),
     }),
   friends: (token: string) => request<FriendDto[]>('/api/friends', token),
+  /** Sends a request (`pending: true`), or accepts theirs if they asked first. */
   pair: (token: string, code: string) =>
     request<FriendDto>('/api/pair', token, {
       method: 'POST',
       body: JSON.stringify({ code }),
+    }),
+  friendRequests: (token: string) => request<FriendRequestDto[]>('/api/friends/requests', token),
+  acceptRequest: (token: string, userId: string) =>
+    request<FriendDto>(`/api/friends/requests/${encodeURIComponent(userId)}/accept`, token, {
+      method: 'POST',
+    }),
+  declineRequest: (token: string, userId: string) =>
+    request<{ ok: true }>(`/api/friends/requests/${encodeURIComponent(userId)}/decline`, token, {
+      method: 'POST',
     }),
   inbox: (token: string) => request<LockDto[]>('/api/locks', token),
   sent: (token: string) => request<LockDto[]>('/api/locks/sent', token),

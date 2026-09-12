@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -11,11 +12,14 @@ import {
   MAX_RECIPIENTS,
   MediaKind,
   MFA_REQUIRED,
+  normalizeMoment,
+  TOGETHER_WAIT_MS,
 } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { AuthClaims } from '../auth/auth.types';
 import { FriendshipsService } from '../friendships/friendships.service';
 import { GroupsService } from '../groups/groups.service';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { CreateLockDto } from './dto/create-lock.dto';
@@ -26,6 +30,7 @@ import {
   canSetCondition,
   defaultConditionLabel,
   isParticipant,
+  isPairTogether,
   isRecipient,
   participants,
 } from './lock.engine';
@@ -37,22 +42,39 @@ export type NameMap = Map<string, string>;
 
 @Injectable()
 export class StashesService {
+  private readonly logger = new Logger(StashesService.name);
+  /** Pending one-minute waits for pair openings, by original lock id. In memory: a restart forgets them. */
+  private readonly waits = new Map<string, NodeJS.Timeout>();
+
   constructor(
     @InjectModel(Lock.name) private readonly lockModel: Model<LockDocument>,
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
     private readonly groupsService: GroupsService,
     private readonly spotifyService: SpotifyService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument> {
-    const recipientIds = [
-      ...new Set(
-        dto.recipientIds.map((id) => (id === 'me' ? actor._id : id)),
-      ),
-    ];
+    // A stash-back answers one TOGETHER lock: the type and recipient are fixed.
+    const original = dto.replyToId ? await this.requireLock(dto.replyToId) : null;
+    if (original) {
+      if (!isRecipient(original, actor._id) || !isPairTogether(original)) {
+        throw new ForbiddenException('You can only stash back on an "open together" sent to you.');
+      }
+      if (original.replyId) {
+        throw new BadRequestException('You already stashed something back for this one.');
+      }
+      if (original.state !== 'LOCKED') {
+        throw new BadRequestException('This one is already opening.');
+      }
+    }
+
+    const recipientIds = original
+      ? [original.senderId]
+      : [...new Set(dto.recipientIds.map((id) => (id === 'me' ? actor._id : id)))];
     if (recipientIds.length === 0 || recipientIds.length > MAX_RECIPIENTS) {
-      throw new BadRequestException('Pick between one and eight people.');
+      throw new BadRequestException('Pick between one and twelve people.');
     }
 
     // Paired, or in a group together. Either is permission to stash to them.
@@ -67,16 +89,17 @@ export class StashesService {
       }
     }
 
-    if (dto.conditionType === 'RECIPIENT_SET' && recipientIds.length > 1) {
+    const conditionType = original ? 'TOGETHER' : dto.conditionType;
+    if (conditionType === 'RECIPIENT_SET' && recipientIds.length > 1) {
       throw new BadRequestException(
         '"You decide" locks go to one person. Pick a condition for a group.',
       );
     }
-    if (dto.conditionType === 'MANUAL' && !dto.conditionLabel?.trim() && !dto.context) {
+    if (conditionType === 'MANUAL' && !dto.conditionLabel?.trim() && !dto.context) {
       throw new BadRequestException('Write the condition in your own words.');
     }
-    if (dto.context && dto.conditionType === 'RECIPIENT_SET') {
-      throw new BadRequestException('A "you decide" lock has no context.');
+    if (dto.context && conditionType === 'RECIPIENT_SET') {
+      throw new BadRequestException('A "you decide" lock has no moment.');
     }
 
     // Never trust client-supplied song metadata — re-resolve from the id so the
@@ -88,23 +111,37 @@ export class StashesService {
 
     const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
 
-    return this.lockModel.create({
+    const lock = await this.lockModel.create({
       senderId: actor._id,
       recipientIds,
       text: dto.text ?? '',
       imageUrl: dto.imageUrl,
       song,
       mediaKind,
-      conditionType: dto.conditionType,
-      conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-      context: dto.context ?? null,
+      conditionType,
+      conditionLabel: original
+        ? 'Opens with theirs'
+        : defaultConditionLabel(conditionType, dto.conditionLabel),
+      context: original ? (original.context ?? null) : normalizeMoment(dto.context),
       contextMetAt: null,
       contextMetBy: null,
       requiresMfa: Boolean(dto.requiresMfa),
+      replyToId: original ? String(original._id) : null,
+      replyId: null,
+      openingStartedAt: null,
+      openedAlone: false,
       state: 'LOCKED',
       confirmedIds: [],
       unlockedAt: null,
     });
+
+    if (original) {
+      original.replyId = String(lock._id);
+      await original.save();
+      // The sender learns they can now start opening.
+      this.realtime.notifyLockUpdated(original, await this.toDtoForEveryone(original));
+    }
+    return lock;
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
@@ -123,9 +160,12 @@ export class StashesService {
 
   /**
    * One hold. `claims` is the verified token: a double-sealed lock refuses to
-   * open unless the post-login Action stamped it with the MFA claim. That is
-   * enforced here, not in the UI — a plain token gets a 403 with a code the
-   * client can act on.
+   * open unless the post-login Action stamped it with the MFA claim.
+   *
+   * For a pair "open together": the sender's hold starts the opening and a
+   * one-minute wait; the recipient's hold finishes it and opens both locks at
+   * once. Emits for the linked stash-back happen here; the controller emits
+   * for the lock that was held.
    */
   async confirm(
     actor: UserDocument,
@@ -147,8 +187,63 @@ export class StashesService {
     lock.state = next.state;
     lock.confirmedIds = next.confirmedIds;
     lock.unlockedAt = next.unlockedAt;
+    if (next.startedOpening) {
+      lock.openingStartedAt = new Date();
+    }
     await lock.save();
+
+    if (next.startedOpening) {
+      this.scheduleOpenAlone(String(lock._id));
+    } else if (lock.state === 'UNLOCKED' && lock.replyId) {
+      // Opened together: the stash-back opens in the same moment.
+      this.cancelWait(String(lock._id));
+      await this.unlockReply(lock);
+    }
     return lock;
+  }
+
+  /** The recipient never showed. Open the sender's side (the stash-back) and tell the recipient. */
+  private scheduleOpenAlone(lockId: string) {
+    this.cancelWait(lockId);
+    const timer = setTimeout(() => {
+      this.waits.delete(lockId);
+      void this.openAlone(lockId).catch((error) =>
+        this.logger.warn(`open-alone failed for ${lockId}: ${(error as Error).message}`),
+      );
+    }, TOGETHER_WAIT_MS);
+    this.waits.set(lockId, timer);
+  }
+
+  private cancelWait(lockId: string) {
+    const timer = this.waits.get(lockId);
+    if (timer) {
+      clearTimeout(timer);
+      this.waits.delete(lockId);
+    }
+  }
+
+  async openAlone(lockId: string): Promise<void> {
+    const lock = await this.lockModel.findById(lockId).exec();
+    if (!lock || lock.state !== 'READY' || lock.openedAlone || !lock.replyId) {
+      return;
+    }
+    lock.openedAlone = true;
+    await lock.save();
+    await this.unlockReply(lock);
+    // The original stays READY: the recipient still holds to see it, and the
+    // card tells them the sender went ahead.
+    this.realtime.notifyLockUpdated(lock, await this.toDtoForEveryone(lock));
+  }
+
+  private async unlockReply(original: LockDocument): Promise<void> {
+    if (!original.replyId) return;
+    const reply = await this.lockModel.findById(original.replyId).exec();
+    if (!reply || reply.state === 'UNLOCKED') return;
+    reply.state = 'UNLOCKED';
+    reply.confirmedIds = participants(reply);
+    reply.unlockedAt = new Date();
+    await reply.save();
+    this.realtime.notifyLockChange(reply, await this.toDtoForEveryone(reply));
   }
 
   async setCondition(
@@ -166,11 +261,14 @@ export class StashesService {
   }
 
   /**
-   * "I'm here." Stamps every sealed lock addressed to the caller whose context
-   * matches. Nothing changes state: the hold is still the unlock. Only the
-   * senders of matching locks learn where the caller is.
+   * "I'm here." Stamps every sealed lock addressed to the caller whose moment
+   * matches. Nothing changes state: the hold is still the unlock.
    */
-  async markHere(actor: UserDocument, context: LockContext): Promise<LockDocument[]> {
+  async markHere(actor: UserDocument, rawContext: LockContext): Promise<LockDocument[]> {
+    const context = normalizeMoment(rawContext);
+    if (!context) {
+      return [];
+    }
     const locks = await this.lockModel
       .find({
         recipientIds: actor._id,
@@ -234,6 +332,10 @@ export class StashesService {
           : name(lock.contextMetBy)
         : null,
       requiresMfa: Boolean(lock.requiresMfa),
+      replyToId: lock.replyToId ?? null,
+      replyId: lock.replyId ?? null,
+      openingStartedAt: lock.openingStartedAt ? lock.openingStartedAt.toISOString() : null,
+      openedAlone: Boolean(lock.openedAlone),
       state: lock.state,
       createdAt: (lock.createdAt ?? new Date()).toISOString(),
       unlockedAt: lock.unlockedAt ? lock.unlockedAt.toISOString() : null,
@@ -258,7 +360,7 @@ export class StashesService {
   }
 
   private async requireLock(id: string): Promise<LockDocument> {
-    const lock = await this.lockModel.findById(id).exec();
+    const lock = await this.lockModel.findById(id).exec().catch(() => null);
     if (!lock) {
       throw new NotFoundException('Lock not found.');
     }

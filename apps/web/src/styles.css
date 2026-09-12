@@ -230,6 +230,8 @@ button {
   position: relative;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   transform: rotate(var(--tilt));
   transition: transform 180ms ease, box-shadow 180ms ease;
   margin: 4px 2px 6px;
@@ -1139,4 +1141,114 @@ button {
 .holders .dot {
   width: 8px;
   height: 8px;
+}
+
+/* Behind an open menu: tap anywhere to close it. Sits above the panes, below the menu. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: transparent;
+}
+
+.moment-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.moment-input input {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.moment-input .btn-ghost {
+  width: auto;
+  padding: 10px 14px;
+}
+
+/* --- requests, alerts ------------------------------------------------- */
+
+.icon-btn {
+  position: relative;
+}
+
+.badge-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--polaroid);
+}
+
+.menu-count.pill {
+  background: var(--accent);
+  color: #fffdf8;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* Something that needs an answer: a friend request, a friend opening together. */
+.alert-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: rgba(28, 22, 18, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.alert-card {
+  width: 100%;
+  background: var(--polaroid);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 22px 18px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.alert-card h3 {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+}
+
+.alert-card .lede {
+  margin: 0 0 6px;
+}
+
+.alert-card .avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 1.2rem;
+}
+
+/* A card waiting on me right now, while they hold. */
+.polaroid.urgent .frame {
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.55);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.55); }
+  50% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 6px rgba(194, 74, 42, 0.2); }
 }

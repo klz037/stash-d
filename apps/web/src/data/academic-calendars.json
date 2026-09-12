@@ -1,5 +1,5 @@
 {
-  "_note": "Dates for 2026–27. cmu, pitt and nyu were entered from the linked calendars. Schools marked approximate: true follow each school's usual pattern and should be checked against sourceUrl before they are read out loud. athletics: UW and Pitt dates are from the linked 2026 schedules; other schools have none yet. quirks are campus things a friend can ask about.",
+  "_note": "Dates for 2026-27. cmu, pitt and nyu fall 2026 dates were checked against the linked calendars on Sept 12 2026 (spring 2027 for those three is still approximate). Schools marked approximate: true follow each school's usual pattern; check sourceUrl before reading a date out loud. Add/drop deadlines are deliberately left out: every school has one in mid-September and it made the same prompt fire for everyone. athletics: UW and Pitt dates are from the linked 2026 schedules. quirks are campus things a friend can ask about.",
   "schools": [
     {
       "id": "cmu",
@@ -10,59 +10,54 @@
       "sourceUrl": "https://www.cmu.edu/hub/calendar/",
       "events": [
         {
-          "date": "2026-09-14",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
-          "date": "2026-10-10",
-          "label": "mid-semester break starts",
+          "date": "2026-10-12",
+          "label": "fall break starts",
           "kind": "lull"
         },
         {
-          "date": "2026-10-13",
-          "label": "mid-semester break ends",
+          "date": "2026-10-19",
+          "label": "fall break ends",
           "kind": "stress"
+        },
+        {
+          "date": "2026-11-03",
+          "label": "Democracy Day, no classes",
+          "kind": "lull"
         },
         {
           "date": "2026-11-25",
-          "label": "Thanksgiving recess starts",
+          "label": "Thanksgiving break starts",
           "kind": "lull"
         },
         {
-          "date": "2026-12-07",
+          "date": "2026-12-04",
           "label": "last day of classes",
           "kind": "milestone"
         },
         {
-          "date": "2026-12-08",
-          "label": "reading day",
-          "kind": "lull"
-        },
-        {
-          "date": "2026-12-09",
+          "date": "2026-12-07",
           "label": "final exams begin",
           "kind": "stress"
         },
         {
-          "date": "2026-12-16",
+          "date": "2026-12-09",
+          "label": "reading day",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-14",
           "label": "final exams end",
           "kind": "milestone"
         },
         {
-          "date": "2027-01-12",
+          "date": "2027-01-11",
           "label": "spring semester begins",
           "kind": "milestone"
         },
         {
-          "date": "2027-03-06",
+          "date": "2027-03-08",
           "label": "spring break starts",
           "kind": "lull"
-        },
-        {
-          "date": "2027-03-14",
-          "label": "spring break ends",
-          "kind": "stress"
         },
         {
           "date": "2027-05-09",
@@ -101,35 +96,35 @@
       "city": "Pittsburgh",
       "lat": 40.4442,
       "lon": -79.9606,
-      "sourceUrl": "https://www.registrar.pitt.edu/calendars",
+      "sourceUrl": "https://www.registrar.pitt.edu/sites/default/files/assets/PDF/Academic%20Calendar%202026-2027_Apple.pdf",
       "events": [
         {
-          "date": "2026-09-05",
-          "label": "add/drop period ends",
+          "date": "2026-10-09",
+          "label": "fall break starts",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-10-12",
+          "label": "fall break ends",
           "kind": "stress"
         },
         {
-          "date": "2026-10-17",
-          "label": "fall break",
+          "date": "2026-11-22",
+          "label": "Thanksgiving recess starts",
           "kind": "lull"
         },
         {
-          "date": "2026-11-25",
-          "label": "Thanksgiving recess",
-          "kind": "lull"
-        },
-        {
-          "date": "2026-12-05",
+          "date": "2026-12-04",
           "label": "last day of classes",
           "kind": "milestone"
         },
         {
-          "date": "2026-12-08",
+          "date": "2026-12-07",
           "label": "final exams begin",
           "kind": "stress"
         },
         {
-          "date": "2026-12-15",
+          "date": "2026-12-11",
           "label": "final exams end",
           "kind": "milestone"
         },
@@ -144,19 +139,9 @@
           "kind": "lull"
         },
         {
-          "date": "2027-03-15",
-          "label": "spring recess ends",
-          "kind": "stress"
-        },
-        {
           "date": "2027-04-30",
           "label": "last day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2027-05-01",
-          "label": "final exams begin",
-          "kind": "stress"
         }
       ],
       "mascot": "Panthers",
@@ -203,35 +188,40 @@
       "city": "New York",
       "lat": 40.7295,
       "lon": -73.9965,
-      "sourceUrl": "https://www.nyu.edu/students/student-guides/academic-calendar.html",
+      "sourceUrl": "https://www.nyu.edu/students/student-information-and-resources/registration-records-and-graduation/academic-calendar.html",
       "events": [
         {
-          "date": "2026-09-15",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-12",
-          "label": "fall recess",
+          "label": "fall break",
           "kind": "lull"
         },
         {
-          "date": "2026-11-25",
-          "label": "Thanksgiving recess",
+          "date": "2026-11-26",
+          "label": "Thanksgiving recess starts",
           "kind": "lull"
         },
         {
-          "date": "2026-12-11",
+          "date": "2026-12-14",
           "label": "last day of classes",
           "kind": "milestone"
         },
         {
           "date": "2026-12-15",
+          "label": "reading day",
+          "kind": "lull"
+        },
+        {
+          "date": "2026-12-16",
           "label": "final exams begin",
           "kind": "stress"
         },
         {
-          "date": "2027-01-20",
+          "date": "2026-12-22",
+          "label": "final exams end",
+          "kind": "milestone"
+        },
+        {
+          "date": "2027-01-19",
           "label": "spring semester begins",
           "kind": "milestone"
         },
@@ -241,19 +231,9 @@
           "kind": "lull"
         },
         {
-          "date": "2027-03-22",
-          "label": "spring break ends",
-          "kind": "stress"
-        },
-        {
           "date": "2027-05-04",
           "label": "last day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2027-05-06",
-          "label": "reading day",
-          "kind": "lull"
         },
         {
           "date": "2027-05-07",
@@ -293,11 +273,6 @@
           "date": "2026-09-08",
           "label": "first day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-09-18",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-19",
@@ -365,11 +340,6 @@
           "date": "2026-08-24",
           "label": "first day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-09-04",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-12",
@@ -444,11 +414,6 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-09-04",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-15",
           "label": "autumn break",
           "kind": "lull"
@@ -519,11 +484,6 @@
           "date": "2026-08-31",
           "label": "first day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-09-21",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-19",
@@ -598,11 +558,6 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-09-04",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-12",
           "label": "midterms week",
           "kind": "stress"
@@ -675,19 +630,9 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-08-21",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-12",
           "label": "fall break",
           "kind": "lull"
-        },
-        {
-          "date": "2026-10-24",
-          "label": "withdrawal deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-11-25",
@@ -755,11 +700,6 @@
           "date": "2026-08-24",
           "label": "first day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-09-04",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-12",
@@ -832,11 +772,6 @@
           "date": "2026-08-26",
           "label": "first day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-09-09",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-12",
@@ -916,11 +851,6 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-10-09",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-26",
           "label": "midterms week",
           "kind": "stress"
@@ -998,11 +928,6 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-10-09",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-26",
           "label": "midterms week",
           "kind": "stress"
@@ -1078,11 +1003,6 @@
           "date": "2026-09-30",
           "label": "autumn quarter begins",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-10-13",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-11-02",
@@ -1242,11 +1162,6 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-09-14",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-12",
           "label": "midterms week",
           "kind": "stress"
@@ -1324,11 +1239,6 @@
           "kind": "milestone"
         },
         {
-          "date": "2026-09-15",
-          "label": "add/drop deadline",
-          "kind": "stress"
-        },
-        {
           "date": "2026-10-12",
           "label": "midterms week",
           "kind": "stress"
@@ -1399,11 +1309,6 @@
           "date": "2026-08-24",
           "label": "first day of classes",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-09-04",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-10",
@@ -1481,11 +1386,6 @@
           "date": "2026-09-22",
           "label": "fall quarter begins",
           "kind": "milestone"
-        },
-        {
-          "date": "2026-10-05",
-          "label": "add/drop deadline",
-          "kind": "stress"
         },
         {
           "date": "2026-10-26",
