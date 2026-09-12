@@ -1,5 +1,32 @@
+import { LockDto } from '@stashd/shared';
 import { useEffect, useState } from 'react';
+import { Polaroid } from '../components/Polaroid';
 import { apiUrl, isAuth0Configured } from '../lib/config';
+
+const previewLocked: LockDto = {
+  id: 'preview-locked',
+  senderId: 'maya',
+  recipientId: 'you',
+  senderName: 'Maya',
+  recipientName: 'You',
+  conditionType: 'MANUAL',
+  conditionLabel: 'Open when you land',
+  state: 'LOCKED',
+  senderConfirmed: false,
+  recipientConfirmed: false,
+  createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+  unlockedAt: null,
+  contentHidden: true,
+};
+
+const previewUnlocked: LockDto = {
+  ...previewLocked,
+  id: 'preview-open',
+  state: 'UNLOCKED',
+  contentHidden: false,
+  text: 'I left the porch light on. Call me when you see it.',
+  unlockedAt: new Date().toISOString(),
+};
 
 export function Landing({
   returnTo,
@@ -11,6 +38,7 @@ export function Landing({
   loading?: boolean;
 }) {
   const [health, setHealth] = useState('Checking API…');
+  const [preview, setPreview] = useState<LockDto>(previewLocked);
 
   useEffect(() => {
     const bases = [apiUrl, 'http://127.0.0.1:3000'].filter(
@@ -66,6 +94,17 @@ export function Landing({
         </button>
       )}
       <p className="hint">{health}</p>
+      {!isAuth0Configured ? (
+        <div className="feed" style={{ marginTop: 22 }}>
+          <p className="lede">Hold the sealed lock. This preview stays on-device.</p>
+          <Polaroid
+            lock={preview}
+            viewerId="you"
+            onConfirm={async () => setPreview(previewUnlocked)}
+            onReply={() => setPreview(previewLocked)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
