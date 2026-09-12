@@ -1,0 +1,106 @@
+{
+  "schools": {
+    "cmu": {
+      "name": "Carnegie Mellon",
+      "newsQuery": "Carnegie Mellon University OR \"CMU Tartans\" OR \"CMU football\" OR \"CMU basketball\" OR \"CMU campus\"",
+      "reddit": "cmu",
+      "athletics": [
+        {
+          "label": "Tartan football weekend",
+          "month": 9,
+          "day": 20
+        },
+        {
+          "label": "home basketball tip-off",
+          "month": 11,
+          "day": 8
+        },
+        {
+          "label": "CMU\u2013Pitt rivalry week",
+          "month": 2,
+          "day": 14
+        }
+      ],
+      "traditions": [
+        "Booth / Carnival build week",
+        "Painting the Fence",
+        "Buggy practice on Morewood",
+        "Midnight breakfast before finals"
+      ],
+      "food": [
+        "Schatz dining",
+        "the UC food trucks",
+        "a late Entropy coffee",
+        "La Prima after studio"
+      ]
+    },
+    "pitt": {
+      "name": "University of Pittsburgh",
+      "newsQuery": "University of Pittsburgh OR \"Pitt Panthers\" OR \"Backyard Brawl\" OR \"Pitt football\" OR \"Pitt campus\"",
+      "reddit": "pitt",
+      "athletics": [
+        {
+          "label": "Panthers football Saturday",
+          "month": 9,
+          "day": 13
+        },
+        {
+          "label": "Pitt basketball tip-off",
+          "month": 11,
+          "day": 5
+        },
+        {
+          "label": "Backyard Brawl week",
+          "month": 11,
+          "day": 28
+        }
+      ],
+      "traditions": [
+        "Cathedral lawn hang",
+        "Vicariously surviving finals in Hillman",
+        "Lantern Night energy",
+        "Senior year Oakland stroll"
+      ],
+      "food": [
+        "the O",
+        "Schenley cafe",
+        "a Primanti's run",
+        "Stacks coffee before class"
+      ]
+    },
+    "nyu": {
+      "name": "New York University",
+      "newsQuery": "\"New York University\" OR \"NYU Violets\" OR \"NYU campus\" OR \"Washington Square Park NYU\"",
+      "reddit": "nyu",
+      "athletics": [
+        {
+          "label": "Violets game day",
+          "month": 10,
+          "day": 4
+        },
+        {
+          "label": "intramural finals week",
+          "month": 11,
+          "day": 18
+        },
+        {
+          "label": "spring club sports showcase",
+          "month": 4,
+          "day": 12
+        }
+      ],
+      "traditions": [
+        "Washington Square hang",
+        "midnight run to the library",
+        "first warm day on the steps",
+        "move-out sidewalk treasure hunt"
+      ],
+      "food": [
+        "a Joe's slice",
+        "Kimmel dining",
+        "a late-night dumpling run",
+        "coffee from the cart on Broadway"
+      ]
+    }
+  }
+}

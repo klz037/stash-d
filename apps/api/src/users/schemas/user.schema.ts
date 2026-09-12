@@ -67,6 +67,10 @@ export class User {
   /** One-time CSRF state for an in-flight Spotify connect. */
   @Prop({ type: String, default: null })
   spotifyAuthState?: string | null;
+
+  /** Opt-in for OS/browser stash alerts (separate from the home shelf). */
+  @Prop({ default: false })
+  stashAlertsEnabled: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
