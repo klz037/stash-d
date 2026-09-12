@@ -792,6 +792,7 @@ export function HomePage() {
         <CaptureSheet
           friends={friends}
           groups={groups}
+          token={token}
           presetRecipientId={replyTo}
           presetConditionLabel={presetCondition}
           onClose={() => {
