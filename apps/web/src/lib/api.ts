@@ -1,4 +1,6 @@
 import type {
+  ComposePromptRequest,
+  ComposePromptResponse,
   CreateFriendNoteRequest,
   CreateGroupRequest,
   CreateLockRequest,
@@ -7,6 +9,9 @@ import type {
   GroupDto,
   JoinGroupRequest,
   LockDto,
+  NotificationsStatusDto,
+  PushSubscriptionDto,
+  StashAlertDto,
   UpdateLocationRequest,
   UpdateProfileRequest,
   UserDto,
@@ -90,4 +95,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  composePrompt: (token: string, body: ComposePromptRequest) =>
+    request<ComposePromptResponse>('/api/prompts/compose', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  notificationsStatus: (token: string) =>
+    request<NotificationsStatusDto>('/api/notifications/status', token),
+  subscribePush: (token: string, body: PushSubscriptionDto) =>
+    request<void>('/api/notifications/subscribe', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  unsubscribePush: (token: string, endpoint: string) =>
+    request<void>(
+      `/api/notifications/subscribe?endpoint=${encodeURIComponent(endpoint)}`,
+      token,
+      { method: 'DELETE' },
+    ),
+  sendAlertNow: (token: string) =>
+    request<StashAlertDto | null>('/api/notifications/send-now', token, {
+      method: 'POST',
+    }),
+  ackAlert: (token: string, id: string) =>
+    request<void>(`/api/notifications/${id}/ack`, token, { method: 'POST' }),
 };

@@ -26,6 +26,10 @@ export interface UserDto {
   locationSharing?: boolean;
   placeLabel?: string;
   locationUpdatedAt?: string;
+  /** Whether Spotify is linked. The tokens themselves never leave the server. */
+  spotifyConnected?: boolean;
+  /** Opt-in for device stash alerts (not shelf cards). */
+  stashAlertsEnabled?: boolean;
 }
 
 export interface FriendDto {
@@ -88,6 +92,47 @@ export interface UpdateProfileRequest {
   city?: string;
   weeklyRitual?: string;
   locationSharing?: boolean;
+  stashAlertsEnabled?: boolean;
+}
+
+export type StashAlertKind =
+  | 'athletics'
+  | 'tradition'
+  | 'food'
+  | 'event'
+  | 'news';
+
+export interface PushSubscriptionDto {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
+export interface StashAlertDto {
+  id: string;
+  title: string;
+  body: string;
+  kind: StashAlertKind;
+  friendId?: string;
+  friendName?: string;
+  schoolId?: string;
+  schoolName?: string;
+  sourceLabel?: string;
+  sourceUrl?: string;
+  suggestedCondition?: string;
+  createdAt: string;
+}
+
+export interface NotificationsStatusDto {
+  enabled: boolean;
+  pushConfigured: boolean;
+  vapidPublicKey?: string;
+  sentToday: number;
+  dailyBudget: number;
+  pending: StashAlertDto[];
 }
 
 export interface UpdateLocationRequest {
@@ -135,7 +180,7 @@ export interface CreateFriendNoteRequest {
 
 export interface PromptDto {
   id: string;
-  kind: 'tier0' | 'tier05' | 'tier1' | 'location' | 'weather';
+  kind: 'tier0' | 'tier05' | 'tier1' | 'location' | 'weather' | 'campus';
   emotion?:
     | 'stress'
     | 'lull'
@@ -144,7 +189,10 @@ export interface PromptDto {
     | 'reciprocity'
     | 'waiting'
     | 'memory'
-    | 'place';
+    | 'place'
+    | 'athletics'
+    | 'tradition'
+    | 'food';
   title: string;
   body: string;
   friendId?: string;
@@ -152,6 +200,30 @@ export interface PromptDto {
   sourceUrl?: string;
   triggerKey: string;
   suggestedCondition?: string;
+  /** School the prompt is about (usually the recipient's). */
+  schoolId?: string;
+}
+
+export interface ComposePromptRequest {
+  schoolId: string;
+  schoolName: string;
+  cue: string;
+  emotion:
+    | 'athletics'
+    | 'tradition'
+    | 'food'
+    | 'calendar'
+    | 'weather'
+    | 'place'
+    | 'soft';
+  recipientName?: string;
+}
+
+export interface ComposePromptResponse {
+  title: string;
+  body: string;
+  cta: string;
+  source: 'ifm' | 'fallback';
 }
 
 export const SOCKET_EVENTS = {

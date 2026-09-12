@@ -3,6 +3,7 @@ import {
   FriendNoteDto,
   GroupDto,
   LockDto,
+  NotificationsStatusDto,
   PromptDto,
   SOCKET_EVENTS,
   UserDto,
@@ -16,6 +17,12 @@ import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
 import { fetchSchoolWeather, watchCoarseLocation } from '../lib/location';
+import {
+  disableStashAlerts,
+  enableStashAlerts,
+  pushSupported,
+  showLocalAlert,
+} from '../lib/notifications';
 import { buildPrompts, dismissPrompt, schoolById, SCHOOL_OPTIONS } from '../lib/prompts';
 import { connectRealtime, disconnectRealtime, getRealtime } from '../lib/socket';
 
@@ -52,6 +59,8 @@ export function HomePage() {
     Record<string, { tempF: number; label: string }>
   >({});
   const [promptTick, setPromptTick] = useState(0);
+  const [alertStatus, setAlertStatus] = useState<NotificationsStatusDto | null>(null);
+  const [alertBusy, setAlertBusy] = useState(false);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
@@ -257,6 +266,68 @@ export function HomePage() {
     toast('Name updated — friends see this.');
   }
 
+  const loadAlertStatus = useCallback(async () => {
+    try {
+      const status = await api.notificationsStatus(tokenRef.current || (await token()));
+      setAlertStatus(status);
+    } catch {
+      setAlertStatus(null);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (!me) return;
+    void loadAlertStatus();
+  }, [me?.id, me?.stashAlertsEnabled, loadAlertStatus]);
+
+  async function toggleStashAlerts() {
+    if (alertBusy) return;
+    setAlertBusy(true);
+    try {
+      const access = tokenRef.current || (await token());
+      if (me?.stashAlertsEnabled) {
+        await disableStashAlerts(access);
+        setMe((current) => (current ? { ...current, stashAlertsEnabled: false } : current));
+        toast('Stash alerts off.');
+      } else {
+        const status = await enableStashAlerts(access);
+        setAlertStatus(status);
+        setMe((current) => (current ? { ...current, stashAlertsEnabled: true } : current));
+        toast(
+          status.pushConfigured
+            ? `Alerts on — at most ${status.dailyBudget} a day.`
+            : 'Alerts on for this device while stash\u2019d is open.',
+        );
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not change alerts.');
+    } finally {
+      setAlertBusy(false);
+    }
+  }
+
+  async function sendTestAlert() {
+    if (alertBusy) return;
+    setAlertBusy(true);
+    try {
+      const access = tokenRef.current || (await token());
+      const alert = await api.sendAlertNow(access);
+      if (!alert) {
+        toast('Budget spent for today, or no friend has a school set.');
+      } else {
+        if (!alertStatus?.pushConfigured) {
+          await showLocalAlert(alert);
+        }
+        toast(`Sent: ${alert.title}`);
+      }
+      await loadAlertStatus();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not send an alert.');
+    } finally {
+      setAlertBusy(false);
+    }
+  }
+
   async function toggleLocationSharing() {
     const next = !me?.locationSharing;
     const profile = await api.updateProfile(tokenRef.current || (await token()), {
@@ -301,6 +372,49 @@ export function HomePage() {
   }
 
   const viewerId = me?.id ?? authUser?.sub ?? '';
+
+  // A tapped device alert lands here with ?stashFor=<friendId>.
+  useEffect(() => {
+    if (!me) return;
+    const params = new URLSearchParams(window.location.search);
+    const stashFor = params.get('stashFor');
+    if (!stashFor) return;
+    setReplyTo(stashFor);
+    setPresetCondition(params.get('condition') ?? undefined);
+    setCapturing(true);
+    const alertId = params.get('alert');
+    if (alertId) {
+      void (async () => {
+        try {
+          await api.ackAlert(tokenRef.current || (await token()), alertId);
+        } catch {
+          // Acking is best-effort.
+        }
+      })();
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, [me?.id, token]);
+
+  // The API finishes the Spotify handshake and sends the browser back here.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('spotify');
+    if (!result) {
+      return;
+    }
+    toast(
+      result === 'connected'
+        ? 'Spotify connected.'
+        : result === 'declined'
+          ? 'Spotify stays disconnected.'
+          : 'Could not connect Spotify. Try again.',
+    );
+    if (result === 'connected') {
+      void refresh();
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, [refresh, toast]);
+
   const empty = inbox.length === 0;
   const sortedInbox = useMemo(
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -356,6 +470,35 @@ export function HomePage() {
           </div>
           {me.locationSharing && me.placeLabel ? (
             <p className="hint">Right now: {me.placeLabel}</p>
+          ) : null}
+
+          <div className="field toggle-row">
+            <span>
+              Stash alerts
+              <small>
+                {pushSupported()
+                  ? 'Device pop-ups about your friends\u2019 campuses. Max 3\u20134 a day, never overnight.'
+                  : 'Add stash\u2019d to your home screen to get device alerts.'}
+              </small>
+            </span>
+            <button
+              className="btn-ghost"
+              type="button"
+              disabled={alertBusy}
+              onClick={() => void toggleStashAlerts()}
+            >
+              {me.stashAlertsEnabled ? 'On' : 'Off'}
+            </button>
+          </div>
+          {me.stashAlertsEnabled && alertStatus ? (
+            <p className="hint">
+              {alertStatus.sentToday}/{alertStatus.dailyBudget} today
+              {alertStatus.pushConfigured ? '' : ' \u00b7 push not configured on server'}
+              {' \u00b7 '}
+              <button className="link" type="button" disabled={alertBusy} onClick={() => void sendTestAlert()}>
+                send one now
+              </button>
+            </p>
           ) : null}
 
           <label className="field">
