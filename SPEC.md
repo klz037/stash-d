@@ -226,11 +226,10 @@ Every one of these starts by resolving the session and 401-ing if there isn't on
 - Auth0 login
 - Pairing by code and link
 - Self-stash
-- Text + one photo
-- Songs from Spotify: stash what you're listening to, album art is the reveal
+- Text + one photoStash
 - Three condition types
 - Hold to unlock
-- Together-unlock pushed over a live socket
+- Together-unlock with 1s polling
 - The Stash, Sent, Capture
 
 ## Explicitly out of scope
