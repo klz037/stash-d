@@ -1,0 +1,14 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: stashd-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - stashd-mongo:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: stashd
+
+volumes:
+  stashd-mongo:

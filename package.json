@@ -1,26 +1,28 @@
 {
-  "name": "stashd",
+  "name": "stash-d",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+  "description": "stash'd — stash something for a friend to unlock later",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0 <23.0.0"
   },
-  "dependencies": {
-    "next": "16.3.5",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+  "scripts": {
+    "postinstall": "npm run build -w @stashd/shared",
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run start:dev -w @stashd/api\" \"npm run dev -w @stashd/web\"",
+    "dev:api": "npm run start:dev -w @stashd/api",
+    "dev:web": "npm run dev -w @stashd/web",
+    "build": "npm run build -w @stashd/shared && npm run build -w @stashd/api && npm run build -w @stashd/web",
+    "build:api": "npm run build -w @stashd/api",
+    "build:web": "npm run build -w @stashd/web",
+    "start:api": "npm run start:prod -w @stashd/api",
+    "test": "npm run test -w @stashd/api",
+    "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.5",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "concurrently": "9.1.2"
   }
 }
