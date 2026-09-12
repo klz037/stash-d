@@ -50,7 +50,7 @@ describe('stash → unlock vertical slice', () => {
     const recipient = await users.getOrCreate(jules);
     await friendships.pair(recipient, sender.pairingCode);
 
-    const locked = await stashes.create(sender, {
+    const [locked] = await stashes.create(sender, {
       recipientId: recipient._id,
       text: 'Open when you land',
       conditionType: 'MANUAL',

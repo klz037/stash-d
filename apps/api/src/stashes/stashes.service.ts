@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { LockDto } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { FriendshipsService } from '../friendships/friendships.service';
+import { GroupsService } from '../groups/groups.service';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { CreateLockDto } from './dto/create-lock.dto';
@@ -27,37 +28,60 @@ export class StashesService {
     @InjectModel(Lock.name) private readonly lockModel: Model<LockDocument>,
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
+    private readonly groupsService: GroupsService,
   ) {}
 
-  async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument> {
-    const recipientId =
-      dto.recipientId === 'me' || dto.recipientId === actor._id
-        ? actor._id
-        : dto.recipientId;
-
-    const paired = await this.friendshipsService.arePaired(actor._id, recipientId);
-    if (!paired) {
-      throw new ForbiddenException(
-        'You can only stash to yourself or someone you are paired with.',
-      );
-    }
-
+  async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument[]> {
     if (dto.conditionType === 'MANUAL' && !dto.conditionLabel?.trim()) {
       throw new BadRequestException('Write the condition in your own words.');
     }
+    if (dto.conditionType === 'TOGETHER' && dto.groupId) {
+      throw new BadRequestException('Open-together is still pairwise — stash the group as Open when…');
+    }
 
-    return this.lockModel.create({
-      senderId: actor._id,
-      recipientId,
-      text: dto.text ?? '',
-      imageUrl: dto.imageUrl,
-      conditionType: dto.conditionType,
-      conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-      state: 'LOCKED',
-      senderConfirmed: false,
-      recipientConfirmed: false,
-      unlockedAt: null,
-    });
+    let recipientIds: string[] = [];
+    let groupId: string | undefined;
+    let groupName: string | undefined;
+
+    if (dto.groupId) {
+      const group = await this.groupsService.getForMember(dto.groupId, actor._id);
+      recipientIds = group.memberIds.filter((id) => id !== actor._id);
+      groupId = String(group._id);
+      groupName = group.name;
+      if (recipientIds.length === 0) {
+        throw new BadRequestException('This group needs someone else in it.');
+      }
+    } else {
+      const recipientId =
+        dto.recipientId === 'me' || dto.recipientId === actor._id
+          ? actor._id
+          : dto.recipientId!;
+      const paired = await this.friendshipsService.arePaired(actor._id, recipientId);
+      if (!paired) {
+        throw new ForbiddenException(
+          'You can only stash to yourself or someone you are paired with.',
+        );
+      }
+      recipientIds = [recipientId];
+    }
+
+    const docs = await this.lockModel.insertMany(
+      recipientIds.map((recipientId) => ({
+        senderId: actor._id,
+        recipientId,
+        text: dto.text ?? '',
+        imageUrl: dto.imageUrl,
+        conditionType: dto.conditionType,
+        conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
+        state: 'LOCKED' as const,
+        senderConfirmed: false,
+        recipientConfirmed: false,
+        unlockedAt: null,
+        groupId,
+        groupName,
+      })),
+    );
+    return docs as unknown as LockDocument[];
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
@@ -128,6 +152,8 @@ export class StashesService {
       text: revealed ? lock.text : undefined,
       imageUrl: revealed ? lock.imageUrl : undefined,
       contentHidden: !revealed,
+      groupId: lock.groupId,
+      groupName: lock.groupName,
     };
   }
 

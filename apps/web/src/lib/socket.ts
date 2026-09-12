@@ -23,3 +23,7 @@ export function disconnectRealtime() {
   socket?.disconnect();
   socket = null;
 }
+
+export function getRealtime(): Socket | null {
+  return socket;
+}

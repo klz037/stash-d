@@ -39,12 +39,16 @@ export class StashesController {
   async create(
     @CurrentUser() user: UserDocument,
     @Body() body: CreateLockDto,
-  ): Promise<LockDto> {
-    const lock = await this.stashesService.create(user, body);
-    const dto = await this.stashesService.toDto(lock, user._id);
-    const recipientView = await this.stashesService.toDto(lock, lock.recipientId);
-    this.realtime.notifyLockCreated(lock.senderId, lock.recipientId, recipientView);
-    return dto;
+  ): Promise<LockDto[]> {
+    const locks = await this.stashesService.create(user, body);
+    const result: LockDto[] = [];
+    for (const lock of locks) {
+      const dto = await this.stashesService.toDto(lock, user._id);
+      const recipientView = await this.stashesService.toDto(lock, lock.recipientId);
+      this.realtime.notifyLockCreated(lock.senderId, lock.recipientId, recipientView);
+      result.push(dto);
+    }
+    return result;
   }
 
   @Post(':id/confirm')

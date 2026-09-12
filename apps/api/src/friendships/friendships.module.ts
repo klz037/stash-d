@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -14,7 +14,7 @@ import { Friendship, FriendshipSchema } from './schemas/friendship.schema';
     ]),
     AuthModule,
     UsersModule,
-    RealtimeModule,
+    forwardRef(() => RealtimeModule),
   ],
   controllers: [FriendshipsController],
   providers: [FriendshipsService],
