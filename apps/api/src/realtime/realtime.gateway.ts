@@ -12,6 +12,7 @@ import { decode, verify, JwtHeader, VerifyOptions } from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { Server, Socket } from 'socket.io';
 import { AuthClaims } from '../auth/auth.types';
+import { readAuth0Config } from '../auth/auth0.config';
 import { LockDocument } from '../stashes/schemas/lock.schema';
 import { UsersService } from '../users/users.service';
 
@@ -34,19 +35,18 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     config: ConfigService,
     private readonly usersService: UsersService,
   ) {
-    const domain = config.get<string>('AUTH0_DOMAIN', '');
-    const audience = config.get<string>('AUTH0_AUDIENCE', '');
+    // Same validation as the HTTP strategy — the socket is a token acceptor too,
+    // so it must not be able to boot with a weaker check. See auth0.config.ts.
+    const auth0 = readAuth0Config(config);
     this.jwks = new JwksClient({
-      jwksUri: domain
-        ? `https://${domain}/.well-known/jwks.json`
-        : 'https://example.invalid/.well-known/jwks.json',
+      jwksUri: auth0.jwksUri,
       cache: true,
       rateLimit: true,
       jwksRequestsPerMinute: 10,
     });
     this.verifyOptions = {
-      audience: audience || undefined,
-      issuer: domain ? `https://${domain}/` : undefined,
+      audience: auth0.audience,
+      issuer: auth0.issuer,
       algorithms: ['RS256'],
     };
   }
@@ -59,7 +59,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.userId = user._id;
       await client.join(this.userRoom(user._id));
       this.addPresence(user._id, client.id);
-      this.emitPresence(user._id, true);
     } catch (error) {
       this.logger.debug(`Socket rejected: ${(error as Error).message}`);
       client.disconnect(true);
@@ -70,12 +69,15 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!client.userId) {
       return;
     }
-    const stillOnline = this.removePresence(client.userId, client.id);
-    if (!stillOnline) {
-      this.emitPresence(client.userId, false);
-    }
+    this.removePresence(client.userId, client.id);
   }
 
+  /**
+   * Presence is tracked in memory but never broadcast. It is read back only
+   * through GET /api/friends, which returns it for people you are paired with.
+   * Pushing it over the socket would have meant telling strangers when you are
+   * online — see the note on removePresence.
+   */
   isOnline(userId: string): boolean {
     return (this.online.get(userId)?.size ?? 0) > 0;
   }
@@ -126,6 +128,16 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.online.set(userId, sockets);
   }
 
+  /**
+   * Returns whether the user still has another socket open.
+   *
+   * This used to be paired with a server-wide `this.server.emit(...)` that told
+   * every connected client when any user came online or went offline, including
+   * users they had never paired with. Presence is not in SPEC.md, nothing in the
+   * web app ever listened for the event, and scoping it correctly would have
+   * required a circular dependency between the realtime and friendship modules.
+   * The broadcast was removed rather than narrowed.
+   */
   private removePresence(userId: string, socketId: string): boolean {
     const sockets = this.online.get(userId);
     if (!sockets) {
@@ -137,10 +149,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return false;
     }
     return true;
-  }
-
-  private emitPresence(userId: string, online: boolean) {
-    this.server.emit(SOCKET_EVENTS.presence, { userId, online });
   }
 
   private readToken(client: Socket): string {

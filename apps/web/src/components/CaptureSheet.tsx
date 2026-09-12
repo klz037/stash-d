@@ -147,7 +147,7 @@ export function CaptureSheet({
             </div>
             {adding ? (
               <p className="hint">
-                Pairing lives on the empty shelf. Close this, enter their code, then stash.
+                Pairing lives on the empty Stash. Close this, enter their code, then stash.
               </p>
             ) : null}
           </>
