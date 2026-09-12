@@ -1,7 +1,10 @@
 import type {
+  CreateFriendNoteRequest,
   CreateLockRequest,
   FriendDto,
+  FriendNoteDto,
   LockDto,
+  UpdateProfileRequest,
   UserDto,
 } from '@stashd/shared';
 import { apiUrl } from './config';
@@ -33,11 +36,19 @@ async function request<T>(
     }
     throw new Error(message);
   }
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
 export const api = {
   me: (token: string) => request<UserDto>('/api/me', token),
+  updateProfile: (token: string, body: UpdateProfileRequest) =>
+    request<UserDto>('/api/me', token, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
   friends: (token: string) => request<FriendDto[]>('/api/friends', token),
   pair: (token: string, code: string) =>
     request<FriendDto>('/api/pair', token, {
@@ -57,5 +68,11 @@ export const api = {
     request<LockDto>(`/api/locks/${id}/condition`, token, {
       method: 'POST',
       body: JSON.stringify({ conditionLabel }),
+    }),
+  notes: (token: string) => request<FriendNoteDto[]>('/api/notes', token),
+  createNote: (token: string, body: CreateFriendNoteRequest) =>
+    request<FriendNoteDto>('/api/notes', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 };
