@@ -122,6 +122,15 @@ The web app is static. It has to reach the API over the internet, and the API ha
 
 Quick check from the deployed page's devtools console: `fetch('<API URL>/api/health').then(r => r.json())`. If that fails, it's 1 or 3. If it works but sign-in still fails, it's 2 or 4.
 
+## After every `git pull`
+
+```bash
+npm install
+npm run dev
+```
+
+`npm run dev` builds `packages/shared` first and keeps rebuilding it while you work. The API compiles against that build, not the source, so a teammate's new shared type only exists for you once it's rebuilt. If the api pane says `Module '"@stashd/shared"' has no exported member`, that's this. `npm install` covers the other one: a dependency someone added to a package.json.
+
 ## When something says "Internal Server Error"
 
 Check these in order. They account for every 500 we've hit.
