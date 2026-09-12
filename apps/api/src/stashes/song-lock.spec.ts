@@ -64,7 +64,7 @@ describe('song locks hide their album art until unlocked', () => {
     await friendships.pair(recipient, sender.pairingCode);
 
     const lock = await stashes.create(sender, {
-      recipientId: recipient._id,
+      recipientIds: [recipient._id],
       text: 'this one is yours',
       conditionType: 'MANUAL',
       conditionLabel: 'Open when you land',
@@ -104,7 +104,7 @@ describe('song locks hide their album art until unlocked', () => {
     const solo = await users.getOrCreate({ sub: 'auth0|solo', name: 'Solo' });
 
     const photo = await stashes.create(solo, {
-      recipientId: 'me',
+      recipientIds: ['me'],
       text: 'a photo',
       imageUrl: 'data:image/png;base64,AAAA',
       conditionType: 'MANUAL',
@@ -113,7 +113,7 @@ describe('song locks hide their album art until unlocked', () => {
     expect((await stashes.toDto(photo, solo._id)).mediaKind).toBe('PHOTO');
 
     const note = await stashes.create(solo, {
-      recipientId: 'me',
+      recipientIds: ['me'],
       text: 'just words',
       conditionType: 'MANUAL',
       conditionLabel: 'later',

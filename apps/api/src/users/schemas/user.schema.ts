@@ -36,6 +36,10 @@ export class User {
   @Prop({ required: true })
   displayName: string;
 
+  /** Once true, getOrCreate stops overwriting displayName from the Auth0 token. */
+  @Prop({ default: false })
+  displayNameSet: boolean;
+
   @Prop({ required: true, unique: true, uppercase: true })
   pairingCode: string;
 

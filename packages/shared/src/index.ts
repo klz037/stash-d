@@ -1,6 +1,8 @@
 export const PAIRING_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const PAIRING_CODE_LENGTH = 6;
 export const HOLD_TO_UNLOCK_MS = 1500;
+/** Most people one lock can be addressed to. Keeps the ring dots legible. */
+export const MAX_RECIPIENTS = 8;
 
 export type ConditionType = 'MANUAL' | 'TOGETHER' | 'RECIPIENT_SET';
 export type LockState = 'LOCKED' | 'READY' | 'UNLOCKED';
@@ -11,9 +13,42 @@ export const CONDITION_TYPES: ConditionType[] = [
   'RECIPIENT_SET',
 ];
 
+// ---------------------------------------------------------------------------
+// Context
+//
+// Where a recipient can say they are. A lock tagged with a context is a plain
+// MANUAL / TOGETHER lock whose condition the app can recognise: when a
+// recipient taps "I'm here" with the matching context, the lock's
+// `contextMetAt` is stamped and the sender is told. The hold is still the
+// unlock. Context tells everyone the condition is true; it opens nothing.
+// ---------------------------------------------------------------------------
+
+export const CONTEXTS = ['coffee', 'walking-home', 'studying', 'home'] as const;
+export type LockContext = (typeof CONTEXTS)[number];
+
+export const CONTEXT_LABELS: Record<LockContext, string> = {
+  coffee: 'getting coffee',
+  'walking-home': 'walking home',
+  studying: 'studying',
+  home: 'home',
+};
+
+export function contextConditionLabel(context: LockContext): string {
+  return context === 'home'
+    ? 'Open when you get home'
+    : `Open when you're ${CONTEXT_LABELS[context]}`;
+}
+
+/** Namespaced access-token claim the post-login Action sets once MFA ran. */
+export const MFA_CLAIM = 'https://stashd/mfa';
+/** Error code the API returns when a double-sealed lock is confirmed without it. */
+export const MFA_REQUIRED = 'MFA_REQUIRED';
+
 export interface UserDto {
   id: string;
   displayName: string;
+  /** True once the user typed their own name. */
+  displayNameSet: boolean;
   pairingCode: string;
   pairingCodeDisplay: string;
   picture?: string;
@@ -36,17 +71,34 @@ export interface FriendDto {
   online?: boolean;
 }
 
+export interface LockRecipientDto {
+  id: string;
+  displayName: string;
+}
+
 export interface LockDto {
   id: string;
   senderId: string;
-  recipientId: string;
+  /** One id for a 1:1 lock, N for a group lock. */
+  recipientIds: string[];
+  recipients: LockRecipientDto[];
+  /** Sender plus recipients, de-duplicated. Everyone who must hold on a TOGETHER lock. */
+  participantIds: string[];
+  /** Users who have completed a hold. */
+  confirmedIds: string[];
   senderName: string;
+  /** "You", one name, or "Maya, Jules +1" depending on who is looking. */
   recipientName: string;
   conditionType: ConditionType;
   conditionLabel: string | null;
+  context: LockContext | null;
+  /** Set when a recipient tapped "I'm here" with the matching context. Not a state. */
+  contextMetAt: string | null;
+  contextMetBy: string | null;
+  contextMetByName: string | null;
+  /** Sender asked for a second key: confirm needs an MFA-backed token. */
+  requiresMfa: boolean;
   state: LockState;
-  senderConfirmed: boolean;
-  recipientConfirmed: boolean;
   createdAt: string;
   unlockedAt: string | null;
   /** Visible while sealed: lets the Stash show a record sleeve for songs. */
@@ -59,11 +111,14 @@ export interface LockDto {
 }
 
 export interface CreateLockRequest {
-  recipientId: string;
+  /** 'me' is accepted as an alias for the caller's own id. */
+  recipientIds: string[];
   text: string;
   imageUrl?: string;
   conditionType: ConditionType;
   conditionLabel?: string;
+  context?: LockContext | null;
+  requiresMfa?: boolean;
   /**
    * A Spotify track id. The server re-resolves it against Spotify and stores
    * canonical metadata — the client never supplies the album art URL, so a
@@ -78,6 +133,16 @@ export interface SetConditionRequest {
 
 export interface PairRequest {
   code: string;
+}
+
+export interface HereRequest {
+  context: LockContext;
+}
+
+export interface HereResponse {
+  context: LockContext;
+  /** Locks addressed to you whose condition just became true. */
+  matched: LockDto[];
 }
 
 export const SOCKET_EVENTS = {
@@ -131,6 +196,8 @@ export interface PromptDto {
 }
 
 export interface UpdateProfileRequest {
+  /** 1–40 chars. Once set, the name stops syncing from the Auth0 token. */
+  displayName?: string;
   schoolId?: string;
   schoolName?: string;
   city?: string;

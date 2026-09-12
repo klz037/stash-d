@@ -3,6 +3,8 @@ import type {
   CreateLockRequest,
   FriendDto,
   FriendNoteDto,
+  HereResponse,
+  LockContext,
   LockDto,
   SongDto,
   SpotifyNowPlayingDto,
@@ -71,6 +73,12 @@ export const api = {
     request<LockDto>(`/api/locks/${id}/condition`, token, {
       method: 'POST',
       body: JSON.stringify({ conditionLabel }),
+    }),
+  /** "I'm here." Stamps matching sealed locks and tells their senders. */
+  here: (token: string, context: LockContext) =>
+    request<HereResponse>('/api/locks/here', token, {
+      method: 'POST',
+      body: JSON.stringify({ context }),
     }),
   spotifyStatus: (token: string) =>
     request<SpotifyStatusDto>('/api/spotify/status', token),

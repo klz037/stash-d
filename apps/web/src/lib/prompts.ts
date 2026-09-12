@@ -52,6 +52,8 @@ export function buildPrompts(input: {
   inbox: LockDto[];
   sent: LockDto[];
   notes?: FriendNoteDto[];
+  /** Current weather at the user's school, if they picked one. */
+  weather?: { tempF: number; label: string } | null;
   now?: Date;
 }): PromptDto[] {
   const now = input.now ?? new Date();
@@ -82,7 +84,7 @@ export function buildPrompts(input: {
   }
 
   for (const friend of friends) {
-    const sentToThem = input.sent.filter((lock) => lock.recipientId === friend.id);
+    const sentToThem = input.sent.filter((lock) => lock.recipientIds.includes(friend.id));
     const fromThem = input.inbox.filter((lock) => lock.senderId === friend.id);
     const recentSent = sentToThem.slice(0, 4);
     const recentFromThem = fromThem.filter((lock) => daysBetween(new Date(lock.createdAt), now) < 30);
@@ -206,6 +208,23 @@ export function buildPrompts(input: {
       });
     }
 
+    const weather = input.weather;
+    if (weather && ['rainy', 'snowy', 'stormy'].includes(weather.label)) {
+      const friend = friends[0];
+      if (friend) {
+        push({
+          id: `weather-${dayStamp(now)}`,
+          kind: 'tier1',
+          emotion: 'weather',
+          title: `${weather.label[0].toUpperCase()}${weather.label.slice(1)} in ${mySchool.city}`,
+          body: `${weather.tempF}° and ${weather.label}. Stash ${friend.displayName} something to open when it clears.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          triggerKey: `weather:${weather.label}:${dayStamp(now)}`,
+        });
+      }
+    }
+
     if (now.getHours() === 18) {
       const friend = friends[0];
       if (friend) {
@@ -246,4 +265,11 @@ export const SCHOOL_OPTIONS = schools.map((school) => ({
   id: school.id,
   name: school.name,
   city: school.city,
+  lat: school.lat,
+  lon: school.lon,
 }));
+
+/** The point we treat as "where you are": your school, never the device. */
+export function schoolLocation(schoolId?: string) {
+  return SCHOOL_OPTIONS.find((school) => school.id === schoolId) ?? null;
+}

@@ -13,10 +13,14 @@ import { JwksClient } from 'jwks-rsa';
 import { Server, Socket } from 'socket.io';
 import { AuthClaims } from '../auth/auth.types';
 import { readAuth0Config } from '../auth/auth0.config';
+import { participants } from '../stashes/lock.engine';
 import { LockDocument } from '../stashes/schemas/lock.schema';
 import { UsersService } from '../users/users.service';
 
 type AuthedSocket = Socket & { userId?: string };
+
+/** One LockDto per participant id, each shaped for that viewer. */
+type LockViews = Map<string, LockDto>;
 
 @WebSocketGateway({
   maxHttpBufferSize: 5e6,
@@ -83,36 +87,45 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return (this.online.get(userId)?.size ?? 0) > 0;
   }
 
-  notifyLockCreated(senderId: string, recipientId: string, dto: LockDto) {
-    this.toUser(recipientId).emit(SOCKET_EVENTS.lockCreated, dto);
-    if (senderId !== recipientId) {
-      this.toUser(senderId).emit(SOCKET_EVENTS.lockUpdated, dto);
+  /** Recipients hear `lock:created`; a sender who is not also a recipient hears `lock:updated`. */
+  notifyLockCreated(lock: LockDocument, views: LockViews) {
+    for (const id of participants(lock)) {
+      const event = lock.recipientIds.includes(id)
+        ? SOCKET_EVENTS.lockCreated
+        : SOCKET_EVENTS.lockUpdated;
+      this.emitTo(id, event, views.get(id));
     }
   }
 
-  notifyLockUpdated(senderId: string, recipientId: string, dto: LockDto) {
-    this.toUser(senderId).emit(SOCKET_EVENTS.lockUpdated, dto);
-    if (senderId !== recipientId) {
-      this.toUser(recipientId).emit(SOCKET_EVENTS.lockUpdated, dto);
+  notifyLockUpdated(lock: LockDocument, views: LockViews) {
+    for (const id of participants(lock)) {
+      this.emitTo(id, SOCKET_EVENTS.lockUpdated, views.get(id));
     }
   }
 
-  notifyLockChange(lock: LockDocument, forSender: LockDto, forRecipient: LockDto) {
+  /** After a hold: everyone on the lock hears the same state event, shaped for them. */
+  notifyLockChange(lock: LockDocument, views: LockViews) {
     const event =
       lock.state === 'UNLOCKED'
         ? SOCKET_EVENTS.lockUnlocked
         : lock.state === 'READY'
           ? SOCKET_EVENTS.lockReady
           : SOCKET_EVENTS.lockUpdated;
-    this.toUser(lock.senderId).emit(event, forSender);
-    if (lock.senderId !== lock.recipientId) {
-      this.toUser(lock.recipientId).emit(event, forRecipient);
+    for (const id of participants(lock)) {
+      this.emitTo(id, event, views.get(id));
     }
   }
 
   notifyPaired(userId: string, friendId: string) {
     this.toUser(userId).emit(SOCKET_EVENTS.friendPaired, { friendId });
     this.toUser(friendId).emit(SOCKET_EVENTS.friendPaired, { friendId: userId });
+  }
+
+  private emitTo(userId: string, event: string, dto: LockDto | undefined) {
+    if (!dto) {
+      return;
+    }
+    this.toUser(userId).emit(event, dto);
   }
 
   private toUser(userId: string) {

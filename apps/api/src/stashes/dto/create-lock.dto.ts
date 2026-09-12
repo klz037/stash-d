@@ -1,5 +1,9 @@
-import { ConditionType } from '@stashd/shared';
+import { ConditionType, CONTEXTS, LockContext, MAX_RECIPIENTS } from '@stashd/shared';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsOptional,
@@ -8,9 +12,13 @@ import {
 } from 'class-validator';
 
 export class CreateLockDto {
-  @IsString()
-  @IsNotEmpty()
-  recipientId!: string;
+  /** 'me' is accepted as an alias for the caller's own id. */
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_RECIPIENTS)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  recipientIds!: string[];
 
   @IsString()
   @MaxLength(2000)
@@ -28,6 +36,14 @@ export class CreateLockDto {
   @IsString()
   @MaxLength(280)
   conditionLabel?: string;
+
+  @IsOptional()
+  @IsIn([...CONTEXTS, null])
+  context?: LockContext | null;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresMfa?: boolean;
 
   /**
    * A Spotify track id / URI / link. The server re-resolves it against Spotify

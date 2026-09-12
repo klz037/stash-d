@@ -132,9 +132,30 @@ GET    /api/friends          # "Me" first
 POST   /api/pair             # { code }
 GET    /api/locks            # inbox (recipient)
 GET    /api/locks/sent
-POST   /api/locks
+PATCH  /api/me               # { displayName?, schoolId?, ... }
+POST   /api/locks            # { recipientIds: [...], context?, requiresMfa?, ... }
 POST   /api/locks/:id/confirm
 POST   /api/locks/:id/condition
+POST   /api/locks/here       # { context } — "I'm here"
+```
+
+A lock can go to up to eight paired people. `TOGETHER` then means everyone holds and the last hold opens every screen. `MANUAL` means any one recipient's hold opens it for all. `RECIPIENT_SET` is one person only.
+
+A `context` (`coffee`, `walking-home`, `studying`, `home`) on a lock is a condition the app can recognise. When a recipient taps "I'm here" with the matching context, the lock's `contextMetAt` is stamped and everyone on it hears `lock:updated`. It does not change state. The hold is still the unlock.
+
+`requiresMfa` locks refuse `confirm` with a 403 `code: MFA_REQUIRED` unless the access token carries the `https://stashd/mfa` claim (set by a post-login Action after step-up). Enforced server-side, not in the UI.
+
+Existing local data from before groups: `db.locks.drop()` is fine, it's demo data. To keep it instead:
+
+```js
+db.locks.updateMany({ recipientId: { $exists: true } }, [
+  { $set: {
+      recipientIds: ['$recipientId'],
+      confirmedIds: { $concatArrays: [
+        { $cond: ['$senderConfirmed', ['$senderId'], []] },
+        { $cond: ['$recipientConfirmed', ['$recipientId'], []] } ] } } },
+  { $unset: ['recipientId', 'senderConfirmed', 'recipientConfirmed'] }
+])
 ```
 
 Socket.IO (same origin / proxied) authenticates the access token on connect:

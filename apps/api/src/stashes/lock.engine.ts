@@ -2,27 +2,38 @@ import { ConditionType, LockState } from '@stashd/shared';
 
 export interface LockEngineInput {
   senderId: string;
-  recipientId: string;
+  recipientIds: string[];
   conditionType: ConditionType;
   conditionLabel: string | null;
   state: LockState;
-  senderConfirmed: boolean;
-  recipientConfirmed: boolean;
+  confirmedIds: string[];
 }
 
 export interface ConfirmResult {
   state: LockState;
-  senderConfirmed: boolean;
-  recipientConfirmed: boolean;
+  confirmedIds: string[];
   unlockedAt: Date | null;
 }
 
-export function isParticipant(lock: LockEngineInput, userId: string): boolean {
-  return lock.senderId === userId || lock.recipientId === userId;
+/** Sender plus every recipient, de-duplicated. Everyone who must hold on a TOGETHER lock. */
+export function participants(lock: Pick<LockEngineInput, 'senderId' | 'recipientIds'>): string[] {
+  return [...new Set([lock.senderId, ...lock.recipientIds])];
 }
 
-export function isSelfStash(lock: LockEngineInput): boolean {
-  return lock.senderId === lock.recipientId;
+export function isRecipient(lock: Pick<LockEngineInput, 'recipientIds'>, userId: string): boolean {
+  return lock.recipientIds.includes(userId);
+}
+
+export function isParticipant(
+  lock: Pick<LockEngineInput, 'senderId' | 'recipientIds'>,
+  userId: string,
+): boolean {
+  return participants(lock).includes(userId);
+}
+
+/** Only one person is involved, so there is nobody to wait for. */
+export function isSelfStash(lock: Pick<LockEngineInput, 'senderId' | 'recipientIds'>): boolean {
+  return participants(lock).length === 1;
 }
 
 export function canSeeContent(lock: Pick<LockEngineInput, 'state'>): boolean {
@@ -32,76 +43,50 @@ export function canSeeContent(lock: Pick<LockEngineInput, 'state'>): boolean {
 export function canSetCondition(lock: LockEngineInput, userId: string): boolean {
   return (
     lock.conditionType === 'RECIPIENT_SET' &&
-    lock.recipientId === userId &&
+    isRecipient(lock, userId) &&
     lock.state === 'LOCKED' &&
     !lock.conditionLabel
   );
 }
 
+/**
+ * MANUAL: any recipient's hold opens it, for everyone.
+ * RECIPIENT_SET: same, once a condition has been written.
+ * TOGETHER: every participant holds once; the last hold opens it.
+ */
 export function canConfirm(lock: LockEngineInput, userId: string): boolean {
   if (lock.state === 'UNLOCKED') {
     return false;
   }
-  if (!isParticipant(lock, userId)) {
-    return false;
-  }
-
   if (lock.conditionType === 'MANUAL') {
-    return lock.recipientId === userId;
+    return isRecipient(lock, userId);
   }
-
   if (lock.conditionType === 'RECIPIENT_SET') {
-    return lock.recipientId === userId && Boolean(lock.conditionLabel);
+    return isRecipient(lock, userId) && Boolean(lock.conditionLabel);
   }
-
   if (lock.conditionType === 'TOGETHER') {
-    if (isSelfStash(lock)) {
-      return true;
-    }
-    if (userId === lock.senderId) {
-      return !lock.senderConfirmed;
-    }
-    return !lock.recipientConfirmed;
+    return isParticipant(lock, userId) && !lock.confirmedIds.includes(userId);
   }
-
   return false;
 }
 
+/** How many holds a TOGETHER lock still needs. Zero for anything else. */
+export function remainingHolds(lock: LockEngineInput): number {
+  if (lock.conditionType !== 'TOGETHER' || lock.state === 'UNLOCKED') {
+    return 0;
+  }
+  return participants(lock).filter((id) => !lock.confirmedIds.includes(id)).length;
+}
+
 export function applyConfirm(lock: LockEngineInput, userId: string): ConfirmResult {
-  let { senderConfirmed, recipientConfirmed, state } = lock;
-  const now = new Date();
-
-  if (isSelfStash(lock)) {
-    return {
-      state: 'UNLOCKED',
-      senderConfirmed: true,
-      recipientConfirmed: true,
-      unlockedAt: now,
-    };
-  }
-
-  if (userId === lock.senderId) {
-    senderConfirmed = true;
-  }
-  if (userId === lock.recipientId) {
-    recipientConfirmed = true;
-  }
-
-  if (lock.conditionType === 'TOGETHER') {
-    const both = senderConfirmed && recipientConfirmed;
-    return {
-      state: both ? 'UNLOCKED' : 'READY',
-      senderConfirmed,
-      recipientConfirmed,
-      unlockedAt: both ? now : null,
-    };
-  }
-
+  const confirmedIds = [...new Set([...lock.confirmedIds, userId])];
+  const everyone = participants(lock).every((id) => confirmedIds.includes(id));
+  const unlocked =
+    lock.conditionType !== 'TOGETHER' || isSelfStash(lock) || everyone;
   return {
-    state: 'UNLOCKED',
-    senderConfirmed,
-    recipientConfirmed,
-    unlockedAt: now,
+    state: unlocked ? 'UNLOCKED' : 'READY',
+    confirmedIds,
+    unlockedAt: unlocked ? new Date() : null,
   };
 }
 

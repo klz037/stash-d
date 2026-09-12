@@ -52,6 +52,26 @@ Note this means a lock can exist with a null condition, briefly. The engine has 
 
 ---
 
+## Groups
+
+A lock has one sender and one to eight recipients. There is no group object. "A group" is the set of people on a lock, picked in the recipient step. Every recipient must be paired with the sender; they do not need to be paired with each other.
+
+| Type | With N recipients |
+|---|---|
+| `MANUAL` | Any one recipient's hold opens it, for everyone. State is global. |
+| `TOGETHER` | Sender plus every recipient holds. First hold → `READY`. Last hold → `UNLOCKED` on every screen at once. No quorum. |
+| `RECIPIENT_SET` | One recipient only. The API rejects more. |
+
+`confirmedIds` records who has held. The sender counts once even if they are also a recipient. A lock whose only participant is the sender is a self-stash and opens on one hold.
+
+## Context
+
+Not GPS. A sender can tag a `MANUAL` or `TOGETHER` lock with one of four contexts: `coffee`, `walking-home`, `studying`, `home`. A recipient taps "I'm here" and picks a context. Every sealed lock addressed to them with that context gets `contextMetAt` stamped, and everyone on it is told over the socket. Nothing changes state: the hold is still the unlock. Only the senders of matching locks learn where you are, which is the same stance as presence.
+
+The school in your profile stands in for your location for anything that needs a place (weather, calendar). The device's location is never read.
+
+---
+
 ## Screens
 
 There are four. There is no nav bar.

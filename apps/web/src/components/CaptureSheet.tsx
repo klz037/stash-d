@@ -1,4 +1,13 @@
-import { ConditionType, FriendDto, SongDto } from '@stashd/shared';
+import {
+  ConditionType,
+  CONTEXT_LABELS,
+  CONTEXTS,
+  contextConditionLabel,
+  FriendDto,
+  LockContext,
+  MAX_RECIPIENTS,
+  SongDto,
+} from '@stashd/shared';
 import { SongPicker } from './SongPicker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -39,11 +48,12 @@ export function CaptureSheet({
   token: () => Promise<string>;
   onClose: () => void;
   onSubmit: (input: {
-    recipientId: string;
+    recipientIds: string[];
     text: string;
     imageUrl?: string;
     conditionType: ConditionType;
     conditionLabel?: string;
+    context?: LockContext | null;
     songTrackId?: string;
   }) => Promise<void>;
 }) {
@@ -51,9 +61,12 @@ export function CaptureSheet({
   const [imageUrl, setImageUrl] = useState<string>();
   const [song, setSong] = useState<SongDto>();
   const [text, setText] = useState('');
-  const [recipientId, setRecipientId] = useState(presetRecipientId ?? 'me');
+  const [recipientIds, setRecipientIds] = useState<string[]>(
+    presetRecipientId ? [presetRecipientId] : [],
+  );
   const [conditionType, setConditionType] = useState<ConditionType>('MANUAL');
   const [conditionLabel, setConditionLabel] = useState('');
+  const [context, setContext] = useState<LockContext | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,11 +75,25 @@ export function CaptureSheet({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
+  // The label we filled in from a context chip, so we can replace it (and
+  // only it) when the chip changes.
+  const autoLabel = useRef('');
 
-  const recipient = useMemo(
-    () => friends.find((friend) => friend.id === recipientId) ?? friends[0],
-    [friends, recipientId],
+  const recipients = useMemo(
+    () => friends.filter((friend) => recipientIds.includes(friend.id)),
+    [friends, recipientIds],
   );
+  const isGroup = recipients.length > 1;
+  const whoLabel =
+    recipients.length === 0
+      ? 'them'
+      : recipients.length === 1
+        ? recipients[0].isSelf
+          ? 'you'
+          : recipients[0].displayName
+        : recipients.length === 2
+          ? `${recipients[0].displayName} and ${recipients[1].displayName}`
+          : `${recipients[0].displayName}, ${recipients[1].displayName} +${recipients.length - 2}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +141,13 @@ export function CaptureSheet({
       streamRef.current = null;
     };
   }, [step, imageUrl]);
+
+  // "You decide" only works with one person. Drop it if a second is added.
+  useEffect(() => {
+    if (isGroup && conditionType === 'RECIPIENT_SET') {
+      setConditionType('MANUAL');
+    }
+  }, [isGroup, conditionType]);
 
   function stopCamera() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -170,17 +204,58 @@ export function CaptureSheet({
     reader.readAsDataURL(file);
   }
 
+  function toggleRecipient(id: string) {
+    setRecipientIds((current) => {
+      if (current.includes(id)) {
+        return current.filter((item) => item !== id);
+      }
+      if (current.length >= MAX_RECIPIENTS) {
+        return current;
+      }
+      return [...current, id];
+    });
+  }
+
+  function pickContext(next: LockContext | null) {
+    setContext(next);
+    if (conditionType !== 'MANUAL') {
+      return;
+    }
+    // Fill the condition from the chip unless the sender wrote their own.
+    if (!conditionLabel.trim() || conditionLabel === autoLabel.current) {
+      const filled = next ? contextConditionLabel(next) : '';
+      autoLabel.current = filled;
+      setConditionLabel(filled);
+    }
+  }
+
+  function labelFor(type: ConditionType): string | undefined {
+    if (type === 'MANUAL') {
+      return conditionLabel.trim() || (context ? contextConditionLabel(context) : undefined);
+    }
+    if (type === 'TOGETHER' && context) {
+      return `Open together when you're ${CONTEXT_LABELS[context]}`;
+    }
+    return undefined;
+  }
+
+  const canStash =
+    !busy &&
+    recipientIds.length > 0 &&
+    (conditionType !== 'MANUAL' || Boolean(labelFor('MANUAL')));
+
   async function finish() {
     setBusy(true);
     setError('');
     try {
       await onSubmit({
-        recipientId: recipient?.isSelf ? 'me' : recipientId,
+        recipientIds,
         text,
         imageUrl,
         songTrackId: song?.trackId,
         conditionType,
-        conditionLabel: conditionType === 'MANUAL' ? conditionLabel : undefined,
+        conditionLabel: labelFor(conditionType),
+        context: conditionType === 'RECIPIENT_SET' ? null : context,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not stash that.');
@@ -204,7 +279,7 @@ export function CaptureSheet({
         {step === 'media' ? (
           <>
             <h2>Capture</h2>
-            <p className="lede">Point at something worth locking. Or skip.</p>
+            <p className="lede">Take a photo, or skip it and just write.</p>
             <div className="camera-stage">
               {imageUrl ? (
                 <img className="camera-preview" src={imageUrl} alt="" />
@@ -306,19 +381,19 @@ export function CaptureSheet({
         {step === 'recipient' ? (
           <>
             <h2>Who is this for?</h2>
+            <p className="lede">Tap more than one to send it to a group.</p>
             <div className="choices">
               {friends.map((friend) => (
                 <button
                   key={friend.id}
                   type="button"
-                  className={`choice ${recipientId === friend.id || (friend.isSelf && recipientId === 'me') ? 'active' : ''}`}
+                  className={`choice ${recipientIds.includes(friend.id) ? 'active' : ''}`}
                   onClick={() => {
-                    setRecipientId(friend.id);
+                    toggleRecipient(friend.id);
                     setAdding(false);
-                    setStep('condition');
                   }}
                 >
-                  {friend.displayName}
+                  {friend.isSelf ? 'Just me' : friend.displayName}
                   {friend.online ? ' · online' : ''}
                 </button>
               ))}
@@ -335,13 +410,21 @@ export function CaptureSheet({
                 Pairing lives on the empty Stash. Close this, enter their code, then stash.
               </p>
             ) : null}
+            <button
+              className="btn"
+              type="button"
+              disabled={recipientIds.length === 0}
+              onClick={() => setStep('condition')}
+            >
+              {recipients.length > 1 ? `Next · ${recipients.length} people` : 'Next'}
+            </button>
           </>
         ) : null}
 
         {step === 'condition' ? (
           <>
             <h2>How does it open?</h2>
-            <p className="lede">For {recipient?.displayName ?? 'them'}.</p>
+            <p className="lede">For {whoLabel}.</p>
             <div className="choices">
               {(
                 [
@@ -349,17 +432,39 @@ export function CaptureSheet({
                   ['TOGETHER', 'Open together'],
                   ['RECIPIENT_SET', 'You decide'],
                 ] as const
-              ).map(([type, label]) => (
-                <button
-                  key={type}
-                  type="button"
-                  className={`choice ${conditionType === type ? 'active' : ''}`}
-                  onClick={() => setConditionType(type)}
-                >
-                  {label}
-                </button>
-              ))}
+              )
+                .filter(([type]) => !(isGroup && type === 'RECIPIENT_SET'))
+                .map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`choice ${conditionType === type ? 'active' : ''}`}
+                    onClick={() => setConditionType(type)}
+                  >
+                    {label}
+                  </button>
+                ))}
             </div>
+            {conditionType !== 'RECIPIENT_SET' ? (
+              <div className="field">
+                <span>Tie it to a moment</span>
+                <div className="chips">
+                  {CONTEXTS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`chip ${context === item ? 'active' : ''}`}
+                      onClick={() => pickContext(context === item ? null : item)}
+                    >
+                      {CONTEXT_LABELS[item]}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">
+                  When they tap “I'm here” for that moment, you'll know. They still hold to open.
+                </p>
+              </div>
+            ) : null}
             {conditionType === 'MANUAL' ? (
               <label className="field">
                 Condition
@@ -372,14 +477,16 @@ export function CaptureSheet({
             ) : (
               <p className="hint">
                 {conditionType === 'TOGETHER'
-                  ? 'Both of you hold. The first wait is the point.'
+                  ? isGroup
+                    ? 'Everyone holds. It opens on every screen when the last hand lands.'
+                    : 'Both of you hold. It opens on both screens at once.'
                   : 'They write the condition after it arrives.'}
               </p>
             )}
             <button
               className="btn"
               type="button"
-              disabled={busy || (conditionType === 'MANUAL' && !conditionLabel.trim())}
+              disabled={!canStash}
               onClick={() => void finish()}
             >
               {busy ? 'Stashing…' : 'Stash'}

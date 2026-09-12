@@ -1,14 +1,26 @@
-import { FriendDto, FriendNoteDto, LockDto, PromptDto, SOCKET_EVENTS, UserDto } from '@stashd/shared';
+import {
+  CONTEXT_LABELS,
+  CONTEXTS,
+  FriendDto,
+  FriendNoteDto,
+  LockContext,
+  LockDto,
+  PromptDto,
+  SOCKET_EVENTS,
+  UserDto,
+} from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Brand } from '../components/Brand';
 import { CaptureSheet } from '../components/CaptureSheet';
 import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
-import { buildPrompts, dismissPrompt, SCHOOL_OPTIONS } from '../lib/prompts';
+import { buildPrompts, dismissPrompt, SCHOOL_OPTIONS, schoolLocation } from '../lib/prompts';
 import { connectRealtime, disconnectRealtime } from '../lib/socket';
+import { fetchWeather, Weather } from '../lib/weather';
 
 function upsertLock(list: LockDto[], next: LockDto) {
   const index = list.findIndex((item) => item.id === next.id);
@@ -27,18 +39,25 @@ export function HomePage() {
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
   const [notes, setNotes] = useState<FriendNoteDto[]>([]);
+  const [weather, setWeather] = useState<Weather | null>(null);
   const [showSent, setShowSent] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
   const [pairError, setPairError] = useState('');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [noteFriendId, setNoteFriendId] = useState('');
+  const [hereBusy, setHereBusy] = useState<LockContext | null>(null);
   const [promptTick, setPromptTick] = useState(0);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+  // Mirrors `sent` so socket handlers can diff against the last known state
+  // without becoming stale closures.
+  const sentRef = useRef<LockDto[]>([]);
+  sentRef.current = sent;
 
   const toast = useCallback((text: string) => {
     const id = Date.now() + Math.random();
@@ -97,12 +116,21 @@ export function HomePage() {
 
       socket.on(SOCKET_EVENTS.lockCreated, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
-        toast(`${lock.senderName} stashed something for you.`);
+        toast(
+          lock.recipients.length > 1
+            ? `${lock.senderName} stashed something for ${lock.recipients.length} of you.`
+            : `${lock.senderName} stashed something for you.`,
+        );
       });
       socket.on(SOCKET_EVENTS.lockReady, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
-        toast("They're holding with you.");
+        const left = lock.participantIds.length - lock.confirmedIds.length;
+        toast(
+          lock.participantIds.length > 2
+            ? `${lock.confirmedIds.length} holding. ${left} to go.`
+            : "They're holding with you.",
+        );
         void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUnlocked, (lock: LockDto) => {
@@ -112,8 +140,15 @@ export function HomePage() {
         void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUpdated, (lock: LockDto) => {
+        const before = sentRef.current.find((item) => item.id === lock.id);
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
+        // The sender's moment: a recipient just said "I'm here."
+        if (lock.contextMetAt && !before?.contextMetAt && lock.context && lock.contextMetByName) {
+          toast(
+            `${lock.contextMetByName} is ${CONTEXT_LABELS[lock.context]}. Your lock is ready to open.`,
+          );
+        }
       });
       socket.on(SOCKET_EVENTS.friendPaired, () => {
         void refreshRef.current();
@@ -137,10 +172,30 @@ export function HomePage() {
     return () => window.clearInterval(id);
   }, [inbox, sent]);
 
+  // Weather at the school, never at the device.
+  useEffect(() => {
+    const school = schoolLocation(me?.schoolId);
+    if (!school) {
+      setWeather(null);
+      return;
+    }
+    let active = true;
+    void fetchWeather(school.lat, school.lon).then((result) => {
+      if (active) setWeather(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [me?.schoolId]);
+
   async function confirm(id: string) {
-    const lock = await api.confirm(tokenRef.current || (await token()), id);
-    setInbox((current) => upsertLock(current, lock));
-    setSent((current) => upsertLock(current, lock));
+    try {
+      const lock = await api.confirm(tokenRef.current || (await token()), id);
+      setInbox((current) => upsertLock(current, lock));
+      setSent((current) => upsertLock(current, lock));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not unlock.');
+    }
   }
 
   async function setCondition(id: string, conditionLabel: string) {
@@ -150,6 +205,24 @@ export function HomePage() {
       conditionLabel,
     );
     setInbox((current) => upsertLock(current, lock));
+  }
+
+  async function saveName() {
+    const name = nameDraft.trim();
+    if (!name) {
+      return;
+    }
+    try {
+      const profile = await api.updateProfile(tokenRef.current || (await token()), {
+        displayName: name,
+      });
+      setMe(profile);
+      setNameDraft('');
+      toast(`Friends will see you as ${profile.displayName}.`);
+      await refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not save your name.');
+    }
   }
 
   async function saveSchool(schoolId: string) {
@@ -181,6 +254,30 @@ export function HomePage() {
     await refresh();
   }
 
+  async function here(context: LockContext) {
+    setHereBusy(context);
+    try {
+      const result = await api.here(tokenRef.current || (await token()), context);
+      for (const lock of result.matched) {
+        setInbox((current) => upsertLock(current, lock));
+      }
+      if (result.matched.length === 0) {
+        toast(`Nothing here is waiting for ${CONTEXT_LABELS[context]}.`);
+      } else {
+        const senders = [...new Set(result.matched.map((lock) => lock.senderName))];
+        toast(
+          `Told ${senders.join(' and ')}. Hold ${
+            result.matched.length === 1 ? 'the card' : 'the cards'
+          } when you're ready.`,
+        );
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not check in.');
+    } finally {
+      setHereBusy(null);
+    }
+  }
+
   const viewerId = me?.id ?? authUser?.sub ?? '';
   // The API finishes the Spotify handshake and sends the browser back here.
   useEffect(() => {
@@ -207,37 +304,80 @@ export function HomePage() {
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [inbox],
   );
+  // Only show the "I'm here" row when some sealed card is actually waiting on a moment.
+  const waitingContexts = useMemo(
+    () =>
+      new Set(
+        inbox
+          .filter((lock) => lock.state !== 'UNLOCKED' && lock.context && !lock.contextMetAt)
+          .map((lock) => lock.context as LockContext),
+      ),
+    [inbox],
+  );
   const prompts = useMemo(() => {
     if (!me) {
       return [] as PromptDto[];
     }
-    return buildPrompts({ me, friends, inbox, sent, notes });
-  }, [me, friends, inbox, sent, notes, promptTick]);
+    return buildPrompts({ me, friends, inbox, sent, notes, weather });
+  }, [me, friends, inbox, sent, notes, weather, promptTick]);
+  const school = schoolLocation(me?.schoolId);
+  const needsName = Boolean(me && !me.displayNameSet);
+
+  const nameForm = (
+    <form
+      className="field"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void saveName();
+      }}
+    >
+      <label htmlFor="display-name">What should friends call you?</label>
+      <input
+        id="display-name"
+        value={nameDraft}
+        maxLength={40}
+        onChange={(event) => setNameDraft(event.target.value)}
+        placeholder={me?.displayName ?? 'Your name'}
+        autoComplete="nickname"
+      />
+      <button className="btn" type="submit" disabled={!nameDraft.trim()}>
+        Save name
+      </button>
+    </form>
+  );
 
   return (
     <>
       <ToastStack toasts={toasts} />
-      <button className="wordmark" type="button" onClick={() => setMenuOpen((value) => !value)}>
-        stash<span>'d</span>
-      </button>
+      <Brand onClick={() => setMenuOpen((value) => !value)} />
       {menuOpen && me ? (
         <div className="account">
           <p>
             {me.displayName} · {me.pairingCodeDisplay}
           </p>
+          {nameForm}
           <label className="field">
             School
             <select
               value={me.schoolId ?? ''}
               onChange={(event) => void saveSchool(event.target.value)}
             >
-              <option value="">One field. Highest yield.</option>
-              {SCHOOL_OPTIONS.map((school) => (
-                <option key={school.id} value={school.id}>
-                  {school.name}
+              <option value="">Pick your school</option>
+              {SCHOOL_OPTIONS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
                 </option>
               ))}
             </select>
+            {school ? (
+              <span className="hint">
+                {school.city}
+                {weather ? ` · ${weather.tempF}° and ${weather.label}` : ''}
+                {' · '}we use your school as your location, not your phone.
+              </span>
+            ) : (
+              <span className="hint">Your school stands in for your location. No GPS.</span>
+            )}
           </label>
           <label className="field">
             Notebook for a friend
@@ -320,6 +460,31 @@ export function HomePage() {
         </section>
 
         <section className="pane" aria-label="The Stash">
+          {needsName && !menuOpen ? (
+            <div className="code-block name-card">
+              <div>One thing first</div>
+              {nameForm}
+              <p className="hint">Right now you show up as “{me?.displayName}”.</p>
+            </div>
+          ) : null}
+
+          {waitingContexts.size > 0 ? (
+            <div className="here-row" aria-label="I'm here">
+              <span>I'm here:</span>
+              {CONTEXTS.filter((item) => waitingContexts.has(item)).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className="chip"
+                  disabled={hereBusy !== null}
+                  onClick={() => void here(item)}
+                >
+                  {hereBusy === item ? '…' : CONTEXT_LABELS[item]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           {prompts.length > 0 ? (
             <div className="prompt-rail">
               {prompts.map((prompt) => (
@@ -427,11 +592,15 @@ export function HomePage() {
           onSubmit={async (input) => {
             const lock = await api.createLock(tokenRef.current || (await token()), input);
             setSent((current) => upsertLock(current, lock));
-            if (lock.recipientId === viewerId) {
+            if (lock.recipientIds.includes(viewerId)) {
               setInbox((current) => upsertLock(current, lock));
             }
             setCapturing(false);
-            toast('Stashed.');
+            toast(
+              lock.recipients.length > 1
+                ? `Stashed for ${lock.recipients.length} people.`
+                : 'Stashed.',
+            );
             setPromptTick((value) => value + 1);
           }}
         />

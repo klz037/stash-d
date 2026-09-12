@@ -1,4 +1,4 @@
-import { HOLD_TO_UNLOCK_MS, LockDto } from '@stashd/shared';
+import { CONTEXT_LABELS, HOLD_TO_UNLOCK_MS, LockDto } from '@stashd/shared';
 import { useEffect, useRef, useState } from 'react';
 import { timeAgo } from '../lib/time';
 
@@ -21,18 +21,28 @@ export function Polaroid({
   const frame = useRef<number | null>(null);
   const started = useRef<number | null>(null);
   const progressRef = useRef(0);
-  const isRecipient = lock.recipientId === viewerId;
+
+  const isRecipient = lock.recipientIds.includes(viewerId);
+  const isGroup = lock.recipients.length > 1;
+  const sealed = lock.state !== 'UNLOCKED';
+  const yours = lock.confirmedIds.includes(viewerId);
+  const others = lock.participantIds.filter((id) => id !== viewerId);
+  const othersDone = others.filter((id) => lock.confirmedIds.includes(id));
+  const theirs = others.length > 0 && othersDone.length === others.length;
+  const waitingOn = others.length - othersDone.length;
+
   const needsCondition =
     lock.conditionType === 'RECIPIENT_SET' &&
     !lock.conditionLabel &&
     isRecipient &&
     lock.state === 'LOCKED';
   const canHold =
-    lock.state !== 'UNLOCKED' &&
+    sealed &&
     !needsCondition &&
     (lock.conditionType === 'TOGETHER'
-      ? lock.senderId === viewerId || lock.recipientId === viewerId
+      ? lock.participantIds.includes(viewerId) && !yours
       : isRecipient);
+  const here = sealed && Boolean(lock.contextMetAt);
 
   function stopHold(completed: boolean) {
     if (frame.current) {
@@ -88,15 +98,30 @@ export function Polaroid({
     };
   });
 
-  const yours =
-    viewerId === lock.senderId ? lock.senderConfirmed : lock.recipientConfirmed;
-  const theirs =
-    viewerId === lock.senderId ? lock.recipientConfirmed : lock.senderConfirmed;
   const ring = lock.conditionType === 'TOGETHER' ? Math.max(progress, yours ? 1 : 0) : progress;
+
+  const readyHint =
+    lock.state === 'READY'
+      ? yours
+        ? waitingOn === 1
+          ? 'Waiting on one more.'
+          : `Waiting on ${waitingOn} more.`
+        : isGroup
+          ? `${othersDone.length} of ${others.length} are holding. Your turn.`
+          : "They're waiting on you."
+      : null;
+
+  const hereHint = here
+    ? lock.contextMetBy === viewerId
+      ? "You're here. Hold to open."
+      : `${lock.contextMetByName ?? 'Someone'} is ${
+          lock.context ? CONTEXT_LABELS[lock.context] : 'there'
+        }.`
+    : null;
 
   return (
     <article
-      className="polaroid"
+      className={`polaroid ${here ? 'here' : ''}`}
       onPointerDown={startHold}
       onMouseDown={startHold}
       onPointerUp={releaseHold}
@@ -124,20 +149,31 @@ export function Polaroid({
             ) : null}
             <div>
               {isRecipient ? `From ${lock.senderName}` : `To ${lock.recipientName}`}
+              {isRecipient && isGroup ? ` · to ${lock.recipientName}` : ''}
               {lock.mediaKind === 'SONG' ? ' · a song' : ''}
             </div>
             <p className="condition">
               {lock.conditionLabel ?? 'You decide when this opens.'}
             </p>
-            {lock.state === 'READY' ? (
-              <p className="hint">
-                {theirs ? "They're waiting on you." : 'Waiting on them.'}
-              </p>
+            {lock.conditionType === 'TOGETHER' && others.length > 0 ? (
+              <div className="holders" aria-label={`${lock.confirmedIds.length} of ${lock.participantIds.length} holding`}>
+                {others.map((id) => (
+                  <span
+                    key={id}
+                    className={`dot ${lock.confirmedIds.includes(id) ? 'on' : ''}`}
+                  />
+                ))}
+              </div>
             ) : null}
-            {canHold ? <p className="hint">Hold to unlock</p> : null}
+            {hereHint ? <p className="hint here-hint">{hereHint}</p> : null}
+            {readyHint ? <p className="hint">{readyHint}</p> : null}
+            {lock.requiresMfa && isRecipient ? (
+              <p className="hint">Needs your second key.</p>
+            ) : null}
+            {canHold && !hereHint ? <p className="hint">Hold to unlock</p> : null}
           </div>
         )}
-        {lock.state !== 'UNLOCKED' ? (
+        {sealed ? (
           <svg className="ring" viewBox="0 0 100 100">
             <circle
               cx="50"
@@ -222,7 +258,7 @@ export function Polaroid({
           </button>
         </form>
       ) : null}
-      {lock.state === 'UNLOCKED' && onReply && isRecipient ? (
+      {lock.state === 'UNLOCKED' && onReply && isRecipient && lock.senderId !== viewerId ? (
         <button
           className="btn-ghost"
           type="button"

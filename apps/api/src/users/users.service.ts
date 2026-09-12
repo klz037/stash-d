@@ -14,7 +14,10 @@ export class UsersService {
   async getOrCreate(claims: AuthClaims): Promise<UserDocument> {
     const existing = await this.userModel.findById(claims.sub).exec();
     if (existing) {
-      const nextName = claims.name ?? existing.displayName;
+      // A name the user typed themselves wins over whatever Auth0 says.
+      const nextName = existing.displayNameSet
+        ? existing.displayName
+        : (claims.name ?? existing.displayName);
       const nextEmail = claims.email ?? existing.email;
       const nextPicture = claims.picture ?? existing.picture;
       if (
@@ -43,6 +46,13 @@ export class UsersService {
     return this.userModel.findById(id).exec();
   }
 
+  async findMany(ids: string[]): Promise<UserDocument[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.userModel.find({ _id: { $in: ids } }).exec();
+  }
+
   async findByPairingCode(code: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ pairingCode: code }).exec();
   }
@@ -51,6 +61,7 @@ export class UsersService {
     return {
       id: user._id,
       displayName: user.displayName,
+      displayNameSet: Boolean(user.displayNameSet),
       pairingCode: user.pairingCode,
       pairingCodeDisplay: formatPairingCode(user.pairingCode),
       picture: user.picture,
@@ -66,12 +77,18 @@ export class UsersService {
   async updateProfile(
     user: UserDocument,
     patch: {
+      displayName?: string;
       schoolId?: string;
       schoolName?: string;
       city?: string;
       weeklyRitual?: string;
     },
   ): Promise<UserDocument> {
+    const name = patch.displayName?.trim();
+    if (name) {
+      user.displayName = name.slice(0, 40);
+      user.displayNameSet = true;
+    }
     if (patch.schoolId !== undefined) user.schoolId = patch.schoolId || undefined;
     if (patch.schoolName !== undefined) user.schoolName = patch.schoolName || undefined;
     if (patch.city !== undefined) user.city = patch.city || undefined;

@@ -1,5 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { ConditionType, LockState, MediaKind } from '@stashd/shared';
+import {
+  ConditionType,
+  CONTEXTS,
+  LockContext,
+  LockState,
+  MediaKind,
+} from '@stashd/shared';
 import { HydratedDocument } from 'mongoose';
 
 export type LockDocument = HydratedDocument<Lock>;
@@ -37,8 +43,12 @@ export class Lock {
   @Prop({ required: true, index: true })
   senderId: string;
 
-  @Prop({ required: true, index: true })
-  recipientId: string;
+  /**
+   * One id for a 1:1 lock, N for a group lock. The sender may appear here too
+   * (a self-stash, or "us"). Multikey index keeps the inbox query cheap.
+   */
+  @Prop({ type: [String], required: true, index: true })
+  recipientIds: string[];
 
   @Prop({ required: true })
   text: string;
@@ -66,6 +76,21 @@ export class Lock {
   @Prop({ type: String, default: null })
   conditionLabel: string | null;
 
+  /** Context the sender attached to the condition, or null. */
+  @Prop({ type: String, enum: [...CONTEXTS, null], default: null })
+  context: LockContext | null;
+
+  /** Stamped when a recipient taps "I'm here" with a matching context. A timestamp, not a state. */
+  @Prop({ type: Date, default: null })
+  contextMetAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  contextMetBy: string | null;
+
+  /** Sender asked for a second key. Confirm is refused unless the token carries the MFA claim. */
+  @Prop({ default: false })
+  requiresMfa: boolean;
+
   @Prop({
     required: true,
     enum: ['LOCKED', 'READY', 'UNLOCKED'],
@@ -73,11 +98,9 @@ export class Lock {
   })
   state: LockState;
 
-  @Prop({ default: false })
-  senderConfirmed: boolean;
-
-  @Prop({ default: false })
-  recipientConfirmed: boolean;
+  /** Users who have completed a hold. TOGETHER unlocks when this covers every participant. */
+  @Prop({ type: [String], default: [] })
+  confirmedIds: string[];
 
   @Prop({ type: Date, default: null })
   unlockedAt: Date | null;
