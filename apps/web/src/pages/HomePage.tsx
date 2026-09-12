@@ -1,11 +1,13 @@
-import { FriendDto, LockDto, SOCKET_EVENTS, UserDto } from '@stashd/shared';
+import { FriendDto, FriendNoteDto, LockDto, PromptDto, SOCKET_EVENTS, UserDto } from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CaptureSheet } from '../components/CaptureSheet';
 import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
+import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
+import { buildPrompts, dismissPrompt, SCHOOL_OPTIONS } from '../lib/prompts';
 import { connectRealtime, disconnectRealtime } from '../lib/socket';
 
 function upsertLock(list: LockDto[], next: LockDto) {
@@ -24,14 +26,19 @@ export function HomePage() {
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
+  const [notes, setNotes] = useState<FriendNoteDto[]>([]);
   const [showSent, setShowSent] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
   const [pairError, setPairError] = useState('');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteFriendId, setNoteFriendId] = useState('');
+  const [promptTick, setPromptTick] = useState(0);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined);
 
   const toast = useCallback((text: string) => {
     const id = Date.now() + Math.random();
@@ -59,10 +66,19 @@ export function HomePage() {
     setFriends(friendList);
     setInbox(incoming);
     setSent(outgoing);
+    try {
+      setNotes(await api.notes(access));
+    } catch {
+      setNotes([]);
+    }
   }, [token]);
 
+  refreshRef.current = refresh;
+
   useEffect(() => {
-    void refresh().catch((err) => toast(err instanceof Error ? err.message : 'Could not load.'));
+    void refresh().catch((err) =>
+      toast(err instanceof Error ? err.message : 'Could not load.'),
+    );
   }, [refresh, toast]);
 
   useEffect(() => {
@@ -70,6 +86,15 @@ export function HomePage() {
     void token().then((access) => {
       if (!active) return;
       const socket = connectRealtime(access);
+
+      const onConnect = () => {
+        void refreshRef.current();
+      };
+      socket.on('connect', onConnect);
+      if (socket.connected) {
+        onConnect();
+      }
+
       socket.on(SOCKET_EVENTS.lockCreated, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         toast(`${lock.senderName} stashed something for you.`);
@@ -78,18 +103,20 @@ export function HomePage() {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
         toast("They're holding with you.");
+        void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUnlocked, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
         toast(lock.contentHidden ? 'A lock just opened.' : 'Unlocked.');
+        void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUpdated, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
       });
       socket.on(SOCKET_EVENTS.friendPaired, () => {
-        void refresh();
+        void refreshRef.current();
         toast('You are paired.');
       });
     });
@@ -97,7 +124,18 @@ export function HomePage() {
       active = false;
       disconnectRealtime();
     };
-  }, [refresh, toast, token]);
+  }, [toast, token]);
+
+  useEffect(() => {
+    const needsPoll = [...inbox, ...sent].some((lock) => lock.state === 'READY');
+    if (!needsPoll) {
+      return undefined;
+    }
+    const id = window.setInterval(() => {
+      void refreshRef.current();
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [inbox, sent]);
 
   async function confirm(id: string) {
     const lock = await api.confirm(tokenRef.current || (await token()), id);
@@ -114,24 +152,97 @@ export function HomePage() {
     setInbox((current) => upsertLock(current, lock));
   }
 
-  const empty = inbox.length === 0;
-  const viewerId = me?.id ?? authUser?.sub ?? '';
+  async function saveSchool(schoolId: string) {
+    const school = SCHOOL_OPTIONS.find((item) => item.id === schoolId);
+    if (!school) {
+      return;
+    }
+    const profile = await api.updateProfile(tokenRef.current || (await token()), {
+      schoolId: school.id,
+      schoolName: school.name,
+      city: school.city,
+    });
+    setMe(profile);
+    toast(`Campus set to ${school.name}.`);
+    setPromptTick((value) => value + 1);
+  }
 
+  async function saveNote() {
+    if (!noteFriendId || !noteDraft.trim()) {
+      return;
+    }
+    await api.createNote(tokenRef.current || (await token()), {
+      friendId: noteFriendId,
+      text: noteDraft.trim(),
+    });
+    setNoteDraft('');
+    toast('Saved to your notebook.');
+    setPromptTick((value) => value + 1);
+    await refresh();
+  }
+
+  const viewerId = me?.id ?? authUser?.sub ?? '';
+  const empty = inbox.length === 0;
   const sortedInbox = useMemo(
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [inbox],
   );
+  const prompts = useMemo(() => {
+    if (!me) {
+      return [] as PromptDto[];
+    }
+    return buildPrompts({ me, friends, inbox, sent, notes });
+  }, [me, friends, inbox, sent, notes, promptTick]);
 
   return (
     <>
       <ToastStack toasts={toasts} />
-      <button className="wordmark" type="button" onClick={() => setMenuOpen((v) => !v)}>
+      <button className="wordmark" type="button" onClick={() => setMenuOpen((value) => !value)}>
         stash<span>'d</span>
       </button>
       {menuOpen && me ? (
-        <p className="account">
-          {me.displayName} · {me.pairingCodeDisplay}
-          <br />
+        <div className="account">
+          <p>
+            {me.displayName} · {me.pairingCodeDisplay}
+          </p>
+          <label className="field">
+            School
+            <select
+              value={me.schoolId ?? ''}
+              onChange={(event) => void saveSchool(event.target.value)}
+            >
+              <option value="">One field. Highest yield.</option>
+              {SCHOOL_OPTIONS.map((school) => (
+                <option key={school.id} value={school.id}>
+                  {school.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            Notebook for a friend
+            <select
+              value={noteFriendId}
+              onChange={(event) => setNoteFriendId(event.target.value)}
+            >
+              <option value="">Who is this about?</option>
+              {friends
+                .filter((friend) => !friend.isSelf)
+                .map((friend) => (
+                  <option key={friend.id} value={friend.id}>
+                    {friend.displayName}
+                  </option>
+                ))}
+            </select>
+            <input
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="her exam, thursday"
+            />
+            <button className="btn" type="button" onClick={() => void saveNote()}>
+              Remember for me
+            </button>
+          </label>
           <button
             className="btn-ghost"
             type="button"
@@ -141,7 +252,7 @@ export function HomePage() {
           >
             Sign out
           </button>
-        </p>
+        </div>
       ) : null}
 
       <div
@@ -150,20 +261,22 @@ export function HomePage() {
           touchStart.current = event.changedTouches[0]?.clientX ?? null;
         }}
         onTouchEnd={(event) => {
-          if (touchStart.current == null) return;
+          if (touchStart.current == null) {
+            return;
+          }
           const delta = (event.changedTouches[0]?.clientX ?? 0) - touchStart.current;
-          if (delta > 60) setShowSent(true);
-          if (delta < -60) setShowSent(false);
+          if (delta > 60) {
+            setShowSent(true);
+          }
+          if (delta < -60) {
+            setShowSent(false);
+          }
           touchStart.current = null;
         }}
       >
         <section className="pane" aria-label="Sent">
           <p className="lede">
-            <button
-              type="button"
-              className="btn-ghost"
-              onClick={() => setShowSent(false)}
-            >
+            <button type="button" className="btn-ghost" onClick={() => setShowSent(false)}>
               Sent. Swipe left to go back
             </button>
           </p>
@@ -187,6 +300,30 @@ export function HomePage() {
         </section>
 
         <section className="pane" aria-label="The Stash">
+          {prompts.length > 0 ? (
+            <div className="prompt-rail">
+              {prompts.map((prompt) => (
+                <PromptCard
+                  key={prompt.id}
+                  prompt={prompt}
+                  onStash={(friendId) => {
+                    setReplyTo(friendId);
+                    setCapturing(true);
+                  }}
+                  onDismiss={(triggerKey) => {
+                    const result = dismissPrompt(triggerKey);
+                    setPromptTick((value) => value + 1);
+                    toast(
+                      result.retired
+                        ? 'Okay — not a thing anymore.'
+                        : 'Skipped. Twice retires it.',
+                    );
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
+
           {empty ? (
             <div className="empty">
               <h2>Nothing's waiting for you yet.</h2>
@@ -226,11 +363,7 @@ export function HomePage() {
           ) : (
             <>
               <p className="lede">
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setShowSent(true)}
-                >
+                <button type="button" className="btn-ghost" onClick={() => setShowSent(true)}>
                   Swipe right for what you sent
                 </button>
               </p>
@@ -278,6 +411,7 @@ export function HomePage() {
             }
             setCapturing(false);
             toast('Stashed.');
+            setPromptTick((value) => value + 1);
           }}
         />
       ) : null}

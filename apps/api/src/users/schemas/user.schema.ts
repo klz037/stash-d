@@ -19,6 +19,18 @@ export class User {
 
   @Prop()
   picture?: string;
+
+  @Prop()
+  schoolId?: string;
+
+  @Prop()
+  schoolName?: string;
+
+  @Prop()
+  city?: string;
+
+  @Prop()
+  weeklyRitual?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
