@@ -1,0 +1,71 @@
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { formatPairingCode, generatePairingCode, UserDto } from '@stashd/shared';
+import { Model } from 'mongoose';
+import { AuthClaims } from '../auth/auth.types';
+import { User, UserDocument } from './schemas/user.schema';
+
+@Injectable()
+export class UsersService {
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+  ) {}
+
+  async getOrCreate(claims: AuthClaims): Promise<UserDocument> {
+    const existing = await this.userModel.findById(claims.sub).exec();
+    if (existing) {
+      const nextName = claims.name ?? existing.displayName;
+      const nextEmail = claims.email ?? existing.email;
+      const nextPicture = claims.picture ?? existing.picture;
+      if (
+        existing.displayName !== nextName ||
+        existing.email !== nextEmail ||
+        existing.picture !== nextPicture
+      ) {
+        existing.displayName = nextName;
+        existing.email = nextEmail;
+        existing.picture = nextPicture;
+        await existing.save();
+      }
+      return existing;
+    }
+
+    return this.userModel.create({
+      _id: claims.sub,
+      displayName: claims.name || claims.email || 'Friend',
+      email: claims.email,
+      picture: claims.picture,
+      pairingCode: await this.uniquePairingCode(),
+    });
+  }
+
+  async findById(id: string): Promise<UserDocument | null> {
+    return this.userModel.findById(id).exec();
+  }
+
+  async findByPairingCode(code: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ pairingCode: code }).exec();
+  }
+
+  toDto(user: UserDocument): UserDto {
+    return {
+      id: user._id,
+      displayName: user.displayName,
+      pairingCode: user.pairingCode,
+      pairingCodeDisplay: formatPairingCode(user.pairingCode),
+      picture: user.picture,
+      email: user.email,
+    };
+  }
+
+  private async uniquePairingCode(): Promise<string> {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const code = generatePairingCode();
+      const clash = await this.userModel.exists({ pairingCode: code });
+      if (!clash) {
+        return code;
+      }
+    }
+    throw new Error('Could not generate a unique pairing code');
+  }
+}
