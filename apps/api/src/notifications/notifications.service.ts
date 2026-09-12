@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type {
+  AlertPreviewDto,
   NotificationsStatusDto,
   PushSubscriptionDto,
   StashAlertDto,
@@ -146,6 +147,66 @@ export class NotificationsService {
     return this.deliverForUser(user, { ignoreGapAndQuietHours: true });
   }
 
+  /**
+   * Dry run: what would today's alerts look like for this user? Composes up
+   * to the daily budget without storing, pushing, or spending anything —
+   * this is what the in-app preview and laptop demos use.
+   */
+  async preview(user: UserDocument): Promise<AlertPreviewDto> {
+    const now = new Date();
+    const day = dayStamp(now);
+    const [friends, groups, sentToday] = await Promise.all([
+      this.friendshipsService.listFriends(user),
+      this.groupsService.list(user),
+      this.alertModel.countDocuments({ userId: user._id, day }),
+    ]);
+    const others = friends.filter((f) => !f.isSelf);
+    const budget = dailyAlertBudget(others.length, groups.length, day);
+
+    const alerts: StashAlertDto[] = [];
+    const usedCues = new Set<string>();
+    const usedFriends = new Set<string>();
+    const candidates = this.rankFriends(others, usedFriends, day);
+
+    let guard = 0;
+    while (alerts.length < budget && guard < budget * 3) {
+      guard += 1;
+      const friend =
+        candidates.find((f) => !usedFriends.has(f.id)) ??
+        candidates[alerts.length % Math.max(1, candidates.length)];
+      if (!friend) break;
+      const built = await this.buildAlert(user, friend, usedCues, `${day}:${alerts.length}`);
+      usedFriends.add(friend.id);
+      if (!built) {
+        if (usedFriends.size >= candidates.length) break;
+        continue;
+      }
+      usedCues.add(built.sourceLabel + '|' + built.cue);
+      alerts.push({
+        id: `preview-${alerts.length}`,
+        title: built.title,
+        body: built.body,
+        kind: built.kind,
+        friendId: friend.id,
+        friendName: friend.displayName,
+        schoolId: built.schoolId,
+        schoolName: built.schoolName,
+        sourceLabel: built.sourceLabel,
+        sourceUrl: built.sourceUrl,
+        suggestedCondition: built.suggestedCondition,
+        createdAt: now.toISOString(),
+      });
+    }
+
+    return {
+      dailyBudget: budget,
+      sentToday,
+      friendCount: others.length,
+      groupCount: groups.length,
+      alerts,
+    };
+  }
+
   @Cron(CronExpression.EVERY_HOUR)
   async tick(): Promise<void> {
     const users = await this.usersService.listAlertOptIns();
@@ -210,45 +271,31 @@ export class NotificationsService {
     const usedCues = new Set(recent.map((a) => a.sourceLabel + '|' + a.title));
     const usedFriendsToday = new Set(todays.map((a) => a.friendId));
 
-    // Prefer friends at a known school we haven't pinged today.
-    const candidates = others
-      .filter((f) => Boolean(this.happenings.schoolMeta(f.schoolId)))
-      .sort((a, b) => {
-        const aUsed = usedFriendsToday.has(a.id) ? 1 : 0;
-        const bUsed = usedFriendsToday.has(b.id) ? 1 : 0;
-        if (aUsed !== bUsed) return aUsed - bUsed;
-        return hashString(`${day}:${a.id}`) - hashString(`${day}:${b.id}`);
-      });
+    const candidates = this.rankFriends(others, usedFriendsToday, day);
     if (candidates.length === 0) return null;
 
     for (const friend of candidates) {
-      const schoolId = friend.schoolId!;
-      const meta = this.happenings.schoolMeta(schoolId)!;
-      const items = await this.happenings.happeningsForSchool(schoolId);
-      const pick = this.pickHappening(items, usedCues, `${day}:${user._id}:${friend.id}`);
-      if (!pick) continue;
-
-      const composed = await this.promptsService.compose({
-        schoolId,
-        schoolName: meta.name,
-        cue: pick.cue,
-        emotion: pick.emotion,
-        recipientName: friend.displayName,
-      });
+      const built = await this.buildAlert(
+        user,
+        friend,
+        usedCues,
+        `${day}:${user._id}:${friend.id}`,
+      );
+      if (!built) continue;
 
       const doc = await this.alertModel.create({
         userId: user._id,
         day,
-        title: composed.title,
-        body: composed.body,
-        kind: pick.kind,
+        title: built.title,
+        body: built.body,
+        kind: built.kind,
         friendId: friend.id,
         friendName: friend.displayName,
-        schoolId,
-        schoolName: meta.name,
-        sourceLabel: pick.sourceLabel,
-        sourceUrl: pick.sourceUrl,
-        suggestedCondition: this.conditionFor(pick),
+        schoolId: built.schoolId,
+        schoolName: built.schoolName,
+        sourceLabel: built.sourceLabel,
+        sourceUrl: built.sourceUrl,
+        suggestedCondition: built.suggestedCondition,
         deliveredPush: false,
         acknowledged: false,
       });
@@ -261,6 +308,62 @@ export class NotificationsService {
       return this.toDto(doc);
     }
     return null;
+  }
+
+  /** Friends at a known school first, rotating who leads each day. */
+  private rankFriends<T extends { id: string; schoolId?: string }>(
+    friends: T[],
+    alreadyPingedToday: Set<string | undefined>,
+    day: string,
+  ): T[] {
+    return friends
+      .filter((f) => Boolean(this.happenings.schoolMeta(f.schoolId)))
+      .sort((a, b) => {
+        const aUsed = alreadyPingedToday.has(a.id) ? 1 : 0;
+        const bUsed = alreadyPingedToday.has(b.id) ? 1 : 0;
+        if (aUsed !== bUsed) return aUsed - bUsed;
+        return hashString(`${day}:${a.id}`) - hashString(`${day}:${b.id}`);
+      });
+  }
+
+  private async buildAlert(
+    user: UserDocument,
+    friend: { id: string; displayName: string; schoolId?: string },
+    usedCues: Set<string>,
+    seed: string,
+  ): Promise<
+    | (SchoolHappening & {
+        title: string;
+        body: string;
+        schoolId: string;
+        schoolName: string;
+        suggestedCondition: string;
+      })
+    | null
+  > {
+    const schoolId = friend.schoolId;
+    const meta = this.happenings.schoolMeta(schoolId);
+    if (!schoolId || !meta) return null;
+    const items = await this.happenings.happeningsForSchool(schoolId);
+    const pick = this.pickHappening(items, usedCues, `${seed}:${user._id}`);
+    if (!pick) return null;
+
+    const composed = await this.promptsService.compose({
+      schoolId,
+      schoolName: meta.name,
+      cue: pick.cue,
+      emotion: pick.emotion,
+      recipientName: friend.displayName,
+    });
+
+    return {
+      ...pick,
+      title: composed.title,
+      body: composed.body,
+      schoolId,
+      schoolName: meta.name,
+      suggestedCondition: this.conditionFor(pick),
+    };
   }
 
   private awakeHourIndex(utcHour: number): number {

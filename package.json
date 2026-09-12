@@ -2,7 +2,7 @@
   "name": "stash-d",
   "version": "0.1.0",
   "private": true,
-  "description": "stash'd — stash something for a friend to unlock later",
+  "description": "stash'd \u2014 stash something for a friend to unlock later",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -20,7 +20,8 @@
     "build:web": "npm run build -w @stashd/web",
     "start:api": "npm run start:prod -w @stashd/api",
     "test": "npm run test -w @stashd/api",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "demo:alerts": "npm run demo:alerts -w @stashd/api --"
   },
   "devDependencies": {
     "concurrently": "9.1.2"

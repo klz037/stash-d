@@ -136,6 +136,16 @@ export interface StashAlertDto {
   createdAt: string;
 }
 
+export interface AlertPreviewDto {
+  /** Today's ceiling for this user (0 when there is nobody to stash for). */
+  dailyBudget: number;
+  sentToday: number;
+  friendCount: number;
+  groupCount: number;
+  /** What today's alerts would say. Nothing is stored or sent. */
+  alerts: StashAlertDto[];
+}
+
 export interface NotificationsStatusDto {
   enabled: boolean;
   pushConfigured: boolean;

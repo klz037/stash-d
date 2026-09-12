@@ -1,4 +1,5 @@
 import type {
+  AlertPreviewDto,
   ComposePromptRequest,
   ComposePromptResponse,
   CreateFriendNoteRequest,
@@ -129,6 +130,8 @@ export const api = {
       token,
       { method: 'DELETE' },
     ),
+  previewAlerts: (token: string) =>
+    request<AlertPreviewDto>('/api/notifications/preview', token, { method: 'POST' }),
   sendAlertNow: (token: string) =>
     request<StashAlertDto | null>('/api/notifications/send-now', token, {
       method: 'POST',
