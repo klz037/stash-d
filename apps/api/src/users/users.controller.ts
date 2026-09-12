@@ -1,5 +1,9 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
-import { UpdateProfileRequest, UserDto } from '@stashd/shared';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  UpdateLocationRequest,
+  UpdateProfileRequest,
+  UserDto,
+} from '@stashd/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserDocument } from './schemas/user.schema';
@@ -21,6 +25,15 @@ export class UsersController {
     @Body() body: UpdateProfileRequest,
   ): Promise<UserDto> {
     const updated = await this.usersService.updateProfile(user, body);
+    return this.usersService.toDto(updated);
+  }
+
+  @Post('me/location')
+  async updateLocation(
+    @CurrentUser() user: UserDocument,
+    @Body() body: UpdateLocationRequest,
+  ): Promise<UserDto> {
+    const updated = await this.usersService.updateLocation(user, body);
     return this.usersService.toDto(updated);
   }
 }

@@ -5,12 +5,19 @@ import {
   IsOptional,
   IsString,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateLockDto {
+  @ValidateIf((body: CreateLockDto) => !body.groupId)
   @IsString()
   @IsNotEmpty()
-  recipientId!: string;
+  recipientId?: string;
+
+  @ValidateIf((body: CreateLockDto) => !body.recipientId)
+  @IsString()
+  @IsNotEmpty()
+  groupId?: string;
 
   @IsString()
   @MaxLength(2000)
@@ -28,4 +35,14 @@ export class CreateLockDto {
   @IsString()
   @MaxLength(280)
   conditionLabel?: string;
+
+  /**
+   * A Spotify track id / URI / link. The server re-resolves it against Spotify
+   * and stores canonical metadata, so a caller cannot plant an arbitrary image
+   * URL in someone else's Stash.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  songTrackId?: string;
 }

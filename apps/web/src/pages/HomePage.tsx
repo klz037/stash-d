@@ -1,4 +1,12 @@
-import { FriendDto, FriendNoteDto, LockDto, PromptDto, SOCKET_EVENTS, UserDto } from '@stashd/shared';
+import {
+  FriendDto,
+  FriendNoteDto,
+  GroupDto,
+  LockDto,
+  PromptDto,
+  SOCKET_EVENTS,
+  UserDto,
+} from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CaptureSheet } from '../components/CaptureSheet';
@@ -7,14 +15,13 @@ import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
-import { buildPrompts, dismissPrompt, SCHOOL_OPTIONS } from '../lib/prompts';
-import { connectRealtime, disconnectRealtime } from '../lib/socket';
+import { fetchSchoolWeather, watchCoarseLocation } from '../lib/location';
+import { buildPrompts, dismissPrompt, schoolById, SCHOOL_OPTIONS } from '../lib/prompts';
+import { connectRealtime, disconnectRealtime, getRealtime } from '../lib/socket';
 
 function upsertLock(list: LockDto[], next: LockDto) {
   const index = list.findIndex((item) => item.id === next.id);
-  if (index === -1) {
-    return [next, ...list];
-  }
+  if (index === -1) return [next, ...list];
   const copy = [...list];
   copy[index] = next;
   return copy;
@@ -24,17 +31,26 @@ export function HomePage() {
   const { getAccessTokenSilently, logout, user: authUser } = useAuth0();
   const [me, setMe] = useState<UserDto | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
+  const [groups, setGroups] = useState<GroupDto[]>([]);
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
   const [notes, setNotes] = useState<FriendNoteDto[]>([]);
   const [showSent, setShowSent] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
+  const [presetCondition, setPresetCondition] = useState<string>();
   const [pairError, setPairError] = useState('');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [noteDraft, setNoteDraft] = useState('');
   const [noteFriendId, setNoteFriendId] = useState('');
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [groupNameDraft, setGroupNameDraft] = useState('');
+  const [groupCodeDraft, setGroupCodeDraft] = useState('');
+  const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
+  const [weatherBySchool, setWeatherBySchool] = useState<
+    Record<string, { tempF: number; label: string }>
+  >({});
   const [promptTick, setPromptTick] = useState(0);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
@@ -63,6 +79,7 @@ export function HomePage() {
       api.sent(access),
     ]);
     setMe(profile);
+    setDisplayNameDraft(profile.displayName);
     setFriends(friendList);
     setInbox(incoming);
     setSent(outgoing);
@@ -70,6 +87,11 @@ export function HomePage() {
       setNotes(await api.notes(access));
     } catch {
       setNotes([]);
+    }
+    try {
+      setGroups(await api.groups(access));
+    } catch {
+      setGroups([]);
     }
   }, [token]);
 
@@ -86,18 +108,19 @@ export function HomePage() {
     void token().then((access) => {
       if (!active) return;
       const socket = connectRealtime(access);
-
       const onConnect = () => {
         void refreshRef.current();
       };
       socket.on('connect', onConnect);
-      if (socket.connected) {
-        onConnect();
-      }
+      if (socket.connected) onConnect();
 
       socket.on(SOCKET_EVENTS.lockCreated, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
-        toast(`${lock.senderName} stashed something for you.`);
+        toast(
+          lock.groupName
+            ? `${lock.senderName} stashed something for ${lock.groupName}.`
+            : `${lock.senderName} stashed something for you.`,
+        );
       });
       socket.on(SOCKET_EVENTS.lockReady, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
@@ -119,6 +142,26 @@ export function HomePage() {
         void refreshRef.current();
         toast('You are paired.');
       });
+      socket.on(
+        SOCKET_EVENTS.location,
+        (payload: { userId: string; placeLabel?: string; locationUpdatedAt?: string }) => {
+          setFriends((current) =>
+            current.map((friend) =>
+              friend.id === payload.userId
+                ? {
+                    ...friend,
+                    placeLabel: payload.placeLabel,
+                    locationUpdatedAt: payload.locationUpdatedAt,
+                  }
+                : friend,
+            ),
+          );
+          setPromptTick((value) => value + 1);
+        },
+      );
+      socket.on(SOCKET_EVENTS.groupUpdated, () => {
+        void refreshRef.current();
+      });
     });
     return () => {
       active = false;
@@ -128,14 +171,52 @@ export function HomePage() {
 
   useEffect(() => {
     const needsPoll = [...inbox, ...sent].some((lock) => lock.state === 'READY');
-    if (!needsPoll) {
-      return undefined;
-    }
+    if (!needsPoll) return undefined;
     const id = window.setInterval(() => {
       void refreshRef.current();
     }, 1000);
     return () => window.clearInterval(id);
   }, [inbox, sent]);
+
+  useEffect(() => {
+    if (!me?.locationSharing) return undefined;
+    return watchCoarseLocation(
+      (place) => {
+        const access = tokenRef.current;
+        if (!access) return;
+        void api.updateLocation(access, place).catch(() => undefined);
+        getRealtime()?.emit('location:report', place);
+      },
+      (message) => toast(message),
+    );
+  }, [me?.locationSharing, toast]);
+
+  useEffect(() => {
+    const schoolIds = new Set<string>();
+    for (const friend of friends) {
+      if (!friend.isSelf && friend.schoolId) schoolIds.add(friend.schoolId);
+    }
+    if (me?.schoolId) schoolIds.add(me.schoolId);
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, { tempF: number; label: string }> = {};
+      await Promise.all(
+        [...schoolIds].map(async (id) => {
+          const school = schoolById(id);
+          if (!school) return;
+          const weather = await fetchSchoolWeather(school.lat, school.lon);
+          if (weather) next[id] = weather;
+        }),
+      );
+      if (!cancelled) {
+        setWeatherBySchool(next);
+        setPromptTick((value) => value + 1);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [friends, me?.schoolId]);
 
   async function confirm(id: string) {
     const lock = await api.confirm(tokenRef.current || (await token()), id);
@@ -154,9 +235,7 @@ export function HomePage() {
 
   async function saveSchool(schoolId: string) {
     const school = SCHOOL_OPTIONS.find((item) => item.id === schoolId);
-    if (!school) {
-      return;
-    }
+    if (!school) return;
     const profile = await api.updateProfile(tokenRef.current || (await token()), {
       schoolId: school.id,
       schoolName: school.name,
@@ -167,10 +246,28 @@ export function HomePage() {
     setPromptTick((value) => value + 1);
   }
 
+  async function saveDisplayName() {
+    const name = displayNameDraft.trim();
+    if (!name) return;
+    const profile = await api.updateProfile(tokenRef.current || (await token()), {
+      displayName: name,
+    });
+    setMe(profile);
+    setDisplayNameDraft(profile.displayName);
+    toast('Name updated — friends see this.');
+  }
+
+  async function toggleLocationSharing() {
+    const next = !me?.locationSharing;
+    const profile = await api.updateProfile(tokenRef.current || (await token()), {
+      locationSharing: next,
+    });
+    setMe(profile);
+    toast(next ? 'Friends can see coarse place vibes.' : 'Location sharing off.');
+  }
+
   async function saveNote() {
-    if (!noteFriendId || !noteDraft.trim()) {
-      return;
-    }
+    if (!noteFriendId || !noteDraft.trim()) return;
     await api.createNote(tokenRef.current || (await token()), {
       friendId: noteFriendId,
       text: noteDraft.trim(),
@@ -181,23 +278,63 @@ export function HomePage() {
     await refresh();
   }
 
+  async function createGroup() {
+    const name = groupNameDraft.trim();
+    if (!name) return;
+    const group = await api.createGroup(tokenRef.current || (await token()), {
+      name,
+      memberIds: groupMemberIds,
+    });
+    setGroups((current) => [group, ...current.filter((item) => item.id !== group.id)]);
+    setGroupNameDraft('');
+    setGroupMemberIds([]);
+    toast(`Group “${group.name}” ready · ${group.inviteCodeDisplay}`);
+  }
+
+  async function joinGroup() {
+    const code = groupCodeDraft.trim();
+    if (!code) return;
+    const group = await api.joinGroup(tokenRef.current || (await token()), { code });
+    setGroups((current) => [group, ...current.filter((item) => item.id !== group.id)]);
+    setGroupCodeDraft('');
+    toast(`Joined ${group.name}.`);
+  }
+
   const viewerId = me?.id ?? authUser?.sub ?? '';
+  // The API finishes the Spotify handshake and sends the browser back here.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('spotify');
+    if (!result) {
+      return;
+    }
+    toast(
+      result === 'connected'
+        ? 'Spotify connected.'
+        : result === 'declined'
+          ? 'Spotify stays disconnected.'
+          : 'Could not connect Spotify. Try again.',
+    );
+    if (result === 'connected') {
+      void refresh();
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, [refresh, toast]);
+
   const empty = inbox.length === 0;
   const sortedInbox = useMemo(
     () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [inbox],
   );
   const prompts = useMemo(() => {
-    if (!me) {
-      return [] as PromptDto[];
-    }
-    return buildPrompts({ me, friends, inbox, sent, notes });
-  }, [me, friends, inbox, sent, notes, promptTick]);
+    if (!me) return [] as PromptDto[];
+    return buildPrompts({ me, friends, inbox, sent, notes, weatherBySchool });
+  }, [me, friends, inbox, sent, notes, weatherBySchool, promptTick]);
 
   return (
     <>
       <ToastStack toasts={toasts} />
-      <button className="wordmark" type="button" onClick={() => setMenuOpen((value) => !value)}>
+      <button className="wordmark" type="button" onClick={() => setMenuOpen((v) => !v)}>
         stash<span>'d</span>
       </button>
       {menuOpen && me ? (
@@ -206,11 +343,20 @@ export function HomePage() {
             {me.displayName} · {me.pairingCodeDisplay}
           </p>
           <label className="field">
+            Display name
+            <input
+              value={displayNameDraft}
+              onChange={(e) => setDisplayNameDraft(e.target.value)}
+              placeholder="What friends see"
+              maxLength={40}
+            />
+            <button className="btn" type="button" onClick={() => void saveDisplayName()}>
+              Save name
+            </button>
+          </label>
+          <label className="field">
             School
-            <select
-              value={me.schoolId ?? ''}
-              onChange={(event) => void saveSchool(event.target.value)}
-            >
+            <select value={me.schoolId ?? ''} onChange={(e) => void saveSchool(e.target.value)}>
               <option value="">One field. Highest yield.</option>
               {SCHOOL_OPTIONS.map((school) => (
                 <option key={school.id} value={school.id}>
@@ -219,12 +365,79 @@ export function HomePage() {
               ))}
             </select>
           </label>
+          <div className="field toggle-row">
+            <span>
+              Share coarse place
+              <small>Friends see “a cafe,” never a pin.</small>
+            </span>
+            <button className="btn-ghost" type="button" onClick={() => void toggleLocationSharing()}>
+              {me.locationSharing ? 'On' : 'Off'}
+            </button>
+          </div>
+          {me.locationSharing && me.placeLabel ? (
+            <p className="hint">Right now: {me.placeLabel}</p>
+          ) : null}
+
+          <label className="field">
+            Groups
+            <input
+              value={groupNameDraft}
+              onChange={(e) => setGroupNameDraft(e.target.value)}
+              placeholder="Squad name"
+              maxLength={40}
+            />
+            <div className="chip-row">
+              {friends
+                .filter((friend) => !friend.isSelf)
+                .map((friend) => {
+                  const selected = groupMemberIds.includes(friend.id);
+                  return (
+                    <button
+                      key={friend.id}
+                      type="button"
+                      className={`chip ${selected ? 'active' : ''}`}
+                      onClick={() =>
+                        setGroupMemberIds((current) =>
+                          selected
+                            ? current.filter((id) => id !== friend.id)
+                            : [...current, friend.id],
+                        )
+                      }
+                    >
+                      {friend.displayName}
+                    </button>
+                  );
+                })}
+            </div>
+            <button className="btn" type="button" onClick={() => void createGroup()}>
+              Create group
+            </button>
+            <input
+              value={groupCodeDraft}
+              onChange={(e) => setGroupCodeDraft(e.target.value)}
+              placeholder="Join with code"
+            />
+            <button className="btn-ghost" type="button" onClick={() => void joinGroup()}>
+              Join group
+            </button>
+            {groups.length > 0 ? (
+              <ul className="group-list">
+                {groups.map((group) => (
+                  <li key={group.id}>
+                    <strong>{group.name}</strong>
+                    <span>
+                      {group.inviteCodeDisplay} ·{' '}
+                      {group.members.map((m) => m.displayName).join(', ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </label>
+
           <label className="field">
             Notebook for a friend
-            <select
-              value={noteFriendId}
-              onChange={(event) => setNoteFriendId(event.target.value)}
-            >
+            <select value={noteFriendId} onChange={(e) => setNoteFriendId(e.target.value)}>
               <option value="">Who is this about?</option>
               {friends
                 .filter((friend) => !friend.isSelf)
@@ -236,7 +449,7 @@ export function HomePage() {
             </select>
             <input
               value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
+              onChange={(e) => setNoteDraft(e.target.value)}
               placeholder="her exam, thursday"
             />
             <button className="btn" type="button" onClick={() => void saveNote()}>
@@ -257,20 +470,14 @@ export function HomePage() {
 
       <div
         className={`pane-track ${showSent ? 'sent' : ''}`}
-        onTouchStart={(event) => {
-          touchStart.current = event.changedTouches[0]?.clientX ?? null;
+        onTouchStart={(e) => {
+          touchStart.current = e.changedTouches[0]?.clientX ?? null;
         }}
-        onTouchEnd={(event) => {
-          if (touchStart.current == null) {
-            return;
-          }
-          const delta = (event.changedTouches[0]?.clientX ?? 0) - touchStart.current;
-          if (delta > 60) {
-            setShowSent(true);
-          }
-          if (delta < -60) {
-            setShowSent(false);
-          }
+        onTouchEnd={(e) => {
+          if (touchStart.current == null) return;
+          const delta = (e.changedTouches[0]?.clientX ?? 0) - touchStart.current;
+          if (delta > 60) setShowSent(true);
+          if (delta < -60) setShowSent(false);
           touchStart.current = null;
         }}
       >
@@ -288,12 +495,7 @@ export function HomePage() {
               </div>
             ) : (
               sent.map((lock) => (
-                <Polaroid
-                  key={lock.id}
-                  lock={lock}
-                  viewerId={viewerId}
-                  onConfirm={confirm}
-                />
+                <Polaroid key={lock.id} lock={lock} viewerId={viewerId} onConfirm={confirm} />
               ))
             )}
           </div>
@@ -306,8 +508,9 @@ export function HomePage() {
                 <PromptCard
                   key={prompt.id}
                   prompt={prompt}
-                  onStash={(friendId) => {
+                  onStash={(friendId, suggestedCondition) => {
                     setReplyTo(friendId);
+                    setPresetCondition(suggestedCondition);
                     setCapturing(true);
                   }}
                   onDismiss={(triggerKey) => {
@@ -377,6 +580,7 @@ export function HomePage() {
                     onSetCondition={setCondition}
                     onReply={(recipientId) => {
                       setReplyTo(recipientId);
+                      setPresetCondition(undefined);
                       setCapturing(true);
                     }}
                   />
@@ -393,6 +597,7 @@ export function HomePage() {
           aria-label="Capture"
           onClick={() => {
             setReplyTo(undefined);
+            setPresetCondition(undefined);
             setCapturing(true);
           }}
         />
@@ -401,16 +606,32 @@ export function HomePage() {
       {capturing ? (
         <CaptureSheet
           friends={friends}
+          groups={groups}
+          token={token}
           presetRecipientId={replyTo}
-          onClose={() => setCapturing(false)}
+          presetConditionLabel={presetCondition}
+          onClose={() => {
+            setCapturing(false);
+            setPresetCondition(undefined);
+          }}
           onSubmit={async (input) => {
-            const lock = await api.createLock(tokenRef.current || (await token()), input);
-            setSent((current) => upsertLock(current, lock));
-            if (lock.recipientId === viewerId) {
-              setInbox((current) => upsertLock(current, lock));
+            const locks = await api.createLock(tokenRef.current || (await token()), {
+              recipientId: input.recipientId,
+              groupId: input.groupId,
+              text: input.text,
+              imageUrl: input.imageUrl,
+              conditionType: input.conditionType,
+              conditionLabel: input.conditionLabel,
+            });
+            for (const lock of locks) {
+              setSent((current) => upsertLock(current, lock));
+              if (lock.recipientId === viewerId) {
+                setInbox((current) => upsertLock(current, lock));
+              }
             }
             setCapturing(false);
-            toast('Stashed.');
+            setPresetCondition(undefined);
+            toast(locks.length > 1 ? `Stashed to ${locks.length} people.` : 'Stashed.');
             setPromptTick((value) => value + 1);
           }}
         />

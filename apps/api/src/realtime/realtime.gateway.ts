@@ -4,16 +4,18 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { LockDto, SOCKET_EVENTS } from '@stashd/shared';
+import { GroupDto, LockDto, SOCKET_EVENTS } from '@stashd/shared';
 import { decode, verify, JwtHeader, VerifyOptions } from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { Server, Socket } from 'socket.io';
 import { AuthClaims } from '../auth/auth.types';
 import { readAuth0Config } from '../auth/auth0.config';
 import { LockDocument } from '../stashes/schemas/lock.schema';
+import { FriendshipsService } from '../friendships/friendships.service';
 import { UsersService } from '../users/users.service';
 
 type AuthedSocket = Socket & { userId?: string };
@@ -35,6 +37,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     config: ConfigService,
     private readonly usersService: UsersService,
+    private readonly friendshipsService: FriendshipsService,
   ) {
     // Same validation as the HTTP strategy — the socket is a token acceptor too,
     // so it must not be able to boot with a weaker check. See auth0.config.ts.
@@ -71,6 +74,28 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
     this.removePresence(client.userId, client.id);
+  }
+
+  
+  @SubscribeMessage('location:report')
+  async onLocationReport(
+    @ConnectedSocket() client: AuthedSocket,
+    body: { coarseLat: number; coarseLon: number; placeLabel?: string },
+  ) {
+    if (!client.userId) return;
+    const user = await this.usersService.findById(client.userId);
+    if (!user || !user.locationSharing) return;
+    const updated = await this.usersService.updateLocation(user, {
+      coarseLat: body.coarseLat,
+      coarseLon: body.coarseLon,
+      placeLabel: body.placeLabel,
+    });
+    const friendIds = await this.friendshipsService.friendIdsOf(client.userId);
+    this.notifyLocation(friendIds, {
+      userId: client.userId,
+      placeLabel: updated.placeLabel,
+      locationUpdatedAt: updated.locationUpdatedAt?.toISOString(),
+    });
   }
 
   /**
@@ -113,6 +138,17 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   notifyPaired(userId: string, friendId: string) {
     this.toUser(userId).emit(SOCKET_EVENTS.friendPaired, { friendId });
     this.toUser(friendId).emit(SOCKET_EVENTS.friendPaired, { friendId: userId });
+  }
+
+
+  notifyLocation(friendIds: string[], payload: { userId: string; placeLabel?: string; locationUpdatedAt?: string }) {
+    for (const friendId of friendIds) {
+      this.toUser(friendId).emit(SOCKET_EVENTS.location, payload);
+    }
+  }
+
+  notifyGroupUpdated(userId: string, group: GroupDto) {
+    this.toUser(userId).emit(SOCKET_EVENTS.groupUpdated, group);
   }
 
   private toUser(userId: string) {

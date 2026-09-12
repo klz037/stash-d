@@ -5,9 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { LockDto } from '@stashd/shared';
+import { LockDto, MediaKind } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { FriendshipsService } from '../friendships/friendships.service';
+import { GroupsService } from '../groups/groups.service';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { CreateLockDto } from './dto/create-lock.dto';
@@ -19,7 +20,8 @@ import {
   defaultConditionLabel,
   isParticipant,
 } from './lock.engine';
-import { Lock, LockDocument } from './schemas/lock.schema';
+import { Lock, LockDocument, LockSong } from './schemas/lock.schema';
+import { SpotifyService } from '../spotify/spotify.service';
 
 @Injectable()
 export class StashesService {
@@ -27,37 +29,81 @@ export class StashesService {
     @InjectModel(Lock.name) private readonly lockModel: Model<LockDocument>,
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
+    private readonly groupsService: GroupsService,
+    private readonly spotifyService: SpotifyService,
   ) {}
 
-  async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument> {
-    const recipientId =
-      dto.recipientId === 'me' || dto.recipientId === actor._id
-        ? actor._id
-        : dto.recipientId;
-
-    const paired = await this.friendshipsService.arePaired(actor._id, recipientId);
-    if (!paired) {
-      throw new ForbiddenException(
-        'You can only stash to yourself or someone you are paired with.',
-      );
-    }
-
+  async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument[]> {
     if (dto.conditionType === 'MANUAL' && !dto.conditionLabel?.trim()) {
       throw new BadRequestException('Write the condition in your own words.');
     }
+    if (dto.conditionType === 'TOGETHER' && dto.groupId) {
+      throw new BadRequestException('Open-together is still pairwise — stash the group as Open when…');
+    }
 
-    return this.lockModel.create({
-      senderId: actor._id,
-      recipientId,
-      text: dto.text ?? '',
-      imageUrl: dto.imageUrl,
-      conditionType: dto.conditionType,
-      conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
-      state: 'LOCKED',
-      senderConfirmed: false,
-      recipientConfirmed: false,
-      unlockedAt: null,
-    });
+    let recipientIds: string[] = [];
+    let groupId: string | undefined;
+    let groupName: string | undefined;
+
+    if (dto.groupId) {
+      const group = await this.groupsService.getForMember(dto.groupId, actor._id);
+      recipientIds = group.memberIds.filter((id) => id !== actor._id);
+      groupId = String(group._id);
+      groupName = group.name;
+      if (recipientIds.length === 0) {
+        throw new BadRequestException('This group needs someone else in it.');
+      }
+    } else {
+      const recipientId =
+        dto.recipientId === 'me' || dto.recipientId === actor._id
+          ? actor._id
+          : dto.recipientId!;
+      const paired = await this.friendshipsService.arePaired(actor._id, recipientId);
+      if (!paired) {
+        throw new ForbiddenException(
+          'You can only stash to yourself or someone you are paired with.',
+        );
+      }
+      recipientIds = [recipientId];
+    }
+
+    // Never trust client-supplied song metadata — re-resolve from the id so the
+    // stored album art URL is always one Spotify actually gave us.
+    let song: LockSong | null = null;
+    if (dto.songTrackId) {
+      const resolved = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
+      song = {
+        trackId: resolved.trackId,
+        title: resolved.title,
+        artist: resolved.artist,
+        albumArtUrl: resolved.albumArtUrl,
+        spotifyUrl: resolved.spotifyUrl,
+        previewUrl: resolved.previewUrl,
+        durationMs: resolved.durationMs,
+      };
+    }
+
+    const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
+
+    const docs = await this.lockModel.insertMany(
+      recipientIds.map((recipientId) => ({
+        senderId: actor._id,
+        recipientId,
+        text: dto.text ?? '',
+        imageUrl: dto.imageUrl,
+        song,
+        mediaKind,
+        conditionType: dto.conditionType,
+        conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
+        state: 'LOCKED' as const,
+        senderConfirmed: false,
+        recipientConfirmed: false,
+        unlockedAt: null,
+        groupId,
+        groupName,
+      })),
+    );
+    return docs as unknown as LockDocument[];
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
@@ -125,9 +171,15 @@ export class StashesService {
       recipientConfirmed: lock.recipientConfirmed,
       createdAt: (lock.createdAt ?? new Date()).toISOString(),
       unlockedAt: lock.unlockedAt ? lock.unlockedAt.toISOString() : null,
+      // mediaKind is metadata and stays visible while sealed; everything below
+      // it is content and is absent from the JSON until state === 'UNLOCKED'.
+      mediaKind: lock.mediaKind ?? 'TEXT',
       text: revealed ? lock.text : undefined,
       imageUrl: revealed ? lock.imageUrl : undefined,
+      song: revealed ? (lock.song ?? undefined) : undefined,
       contentHidden: !revealed,
+      groupId: lock.groupId,
+      groupName: lock.groupName,
     };
   }
 
