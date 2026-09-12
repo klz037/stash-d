@@ -1,4 +1,5 @@
 import {
+  AlertPreviewDto,
   FriendDto,
   FriendNoteDto,
   GroupDto,
@@ -10,6 +11,7 @@ import {
 } from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertPreview } from '../components/AlertPreview';
 import { CaptureSheet } from '../components/CaptureSheet';
 import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
@@ -61,6 +63,9 @@ export function HomePage() {
   const [promptTick, setPromptTick] = useState(0);
   const [alertStatus, setAlertStatus] = useState<NotificationsStatusDto | null>(null);
   const [alertBusy, setAlertBusy] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [preview, setPreview] = useState<AlertPreviewDto | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
@@ -306,6 +311,34 @@ export function HomePage() {
     }
   }
 
+  const loadPreview = useCallback(async () => {
+    setPreviewLoading(true);
+    try {
+      const access = tokenRef.current || (await token());
+      setPreview(await api.previewAlerts(access));
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not build a preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [token, toast]);
+
+  function openPreview() {
+    setPreviewOpen(true);
+    setMenuOpen(false);
+    void loadPreview();
+  }
+
+  // ?preview=alerts opens the lock-screen preview straight away — handy for demos.
+  useEffect(() => {
+    if (!me) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('preview') !== 'alerts') return;
+    setPreviewOpen(true);
+    void loadPreview();
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, [me?.id, loadPreview]);
+
   async function sendTestAlert() {
     if (alertBusy) return;
     setAlertBusy(true);
@@ -500,6 +533,9 @@ export function HomePage() {
               </button>
             </p>
           ) : null}
+          <button className="btn-ghost" type="button" onClick={openPreview}>
+            Preview today's alerts
+          </button>
 
           <label className="field">
             Groups
@@ -726,10 +762,37 @@ export function HomePage() {
         />
       </div>
 
+      {previewOpen ? (
+        <AlertPreview
+          preview={preview}
+          loading={previewLoading}
+          pushConfigured={Boolean(alertStatus?.pushConfigured)}
+          onClose={() => setPreviewOpen(false)}
+          onRefresh={() => void loadPreview()}
+          onPop={(alert) => {
+            void showLocalAlert(alert).then((shown) => {
+              toast(
+                shown
+                  ? 'Check your notification center.'
+                  : 'Allow notifications for this site to see the pop-up.',
+              );
+            });
+          }}
+          onSendReal={() => void sendTestAlert()}
+          onStash={(alert) => {
+            setPreviewOpen(false);
+            setReplyTo(alert.friendId);
+            setPresetCondition(alert.suggestedCondition);
+            setCapturing(true);
+          }}
+        />
+      ) : null}
+
       {capturing ? (
         <CaptureSheet
           friends={friends}
           groups={groups}
+          token={token}
           presetRecipientId={replyTo}
           presetConditionLabel={presetCondition}
           onClose={() => {

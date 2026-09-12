@@ -44,3 +44,6 @@ apps/web/public/workbox-*.js.map
 # IDE
 .idea
 .vscode
+
+# next dev artifacts (accidentally committed once)
+.next

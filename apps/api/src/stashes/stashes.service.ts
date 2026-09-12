@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { LockDto } from '@stashd/shared';
+import { LockDto, MediaKind } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { FriendshipsService } from '../friendships/friendships.service';
 import { GroupsService } from '../groups/groups.service';
@@ -20,7 +20,8 @@ import {
   defaultConditionLabel,
   isParticipant,
 } from './lock.engine';
-import { Lock, LockDocument } from './schemas/lock.schema';
+import { Lock, LockDocument, LockSong } from './schemas/lock.schema';
+import { SpotifyService } from '../spotify/spotify.service';
 
 @Injectable()
 export class StashesService {
@@ -29,6 +30,7 @@ export class StashesService {
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
     private readonly groupsService: GroupsService,
+    private readonly spotifyService: SpotifyService,
   ) {}
 
   async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument[]> {
@@ -169,8 +171,12 @@ export class StashesService {
       recipientConfirmed: lock.recipientConfirmed,
       createdAt: (lock.createdAt ?? new Date()).toISOString(),
       unlockedAt: lock.unlockedAt ? lock.unlockedAt.toISOString() : null,
+      // mediaKind is metadata and stays visible while sealed; everything below
+      // it is content and is absent from the JSON until state === 'UNLOCKED'.
+      mediaKind: lock.mediaKind ?? 'TEXT',
       text: revealed ? lock.text : undefined,
       imageUrl: revealed ? lock.imageUrl : undefined,
+      song: revealed ? (lock.song ?? undefined) : undefined,
       contentHidden: !revealed,
       groupId: lock.groupId,
       groupName: lock.groupName,

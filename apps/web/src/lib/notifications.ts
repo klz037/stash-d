@@ -74,15 +74,30 @@ export async function disableStashAlerts(token: string): Promise<void> {
 }
 
 /** Foreground fallback when push isn't configured: still surface as an OS notification. */
-export async function showLocalAlert(alert: { title: string; body: string; friendId?: string }) {
-  if (!pushSupported() || Notification.permission !== 'granted') return;
+export async function showLocalAlert(alert: {
+  id?: string;
+  title: string;
+  body: string;
+  friendId?: string;
+  friendName?: string;
+  suggestedCondition?: string;
+}): Promise<boolean> {
+  if (!pushSupported()) return false;
+  if (Notification.permission !== 'granted') {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return false;
+  }
   const registration = await navigator.serviceWorker.ready;
   const params = new URLSearchParams();
   if (alert.friendId) params.set('stashFor', alert.friendId);
+  if (alert.suggestedCondition) params.set('condition', alert.suggestedCondition);
+  if (alert.id && !alert.id.startsWith('preview-')) params.set('alert', alert.id);
   await registration.showNotification(alert.title, {
     body: alert.body,
     icon: '/pwa-192.png',
-    tag: 'stashd-alert-local',
+    badge: '/pwa-192.png',
+    tag: `stashd-alert-${alert.id ?? 'local'}`,
     data: { url: `/?${params.toString()}` },
   });
+  return true;
 }

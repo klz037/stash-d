@@ -9,7 +9,11 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { NotificationsStatusDto, StashAlertDto } from '@stashd/shared';
+import type {
+  AlertPreviewDto,
+  NotificationsStatusDto,
+  StashAlertDto,
+} from '@stashd/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserDocument } from '../users/schemas/user.schema';
@@ -42,6 +46,11 @@ export class NotificationsController {
     @Query('endpoint') endpoint?: string,
   ): Promise<void> {
     await this.notifications.removeSubscription(user, endpoint);
+  }
+
+  @Post('preview')
+  preview(@CurrentUser() user: UserDocument): Promise<AlertPreviewDto> {
+    return this.notifications.preview(user);
   }
 
   @Post('send-now')

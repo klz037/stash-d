@@ -1,4 +1,5 @@
 import type {
+  AlertPreviewDto,
   ComposePromptRequest,
   ComposePromptResponse,
   CreateFriendNoteRequest,
@@ -13,6 +14,9 @@ import type {
   PushSubscriptionDto,
   StashAlertDto,
   UpdateLocationRequest,
+  SongDto,
+  SpotifyNowPlayingDto,
+  SpotifyStatusDto,
   UpdateProfileRequest,
   UserDto,
 } from '@stashd/shared';
@@ -78,6 +82,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ conditionLabel }),
     }),
+  spotifyStatus: (token: string) =>
+    request<SpotifyStatusDto>('/api/spotify/status', token),
+  spotifyAuthorizeUrl: (token: string) =>
+    request<{ url: string }>('/api/spotify/authorize-url', token),
+  spotifyNowPlaying: (token: string) =>
+    request<SpotifyNowPlayingDto>('/api/spotify/now-playing', token),
+  spotifyResolve: (token: string, url: string) =>
+    request<SongDto>('/api/spotify/resolve', token, {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  spotifyDisconnect: (token: string) =>
+    request<SpotifyStatusDto>('/api/spotify', token, { method: 'DELETE' }),
   notes: (token: string) => request<FriendNoteDto[]>('/api/notes', token),
   createNote: (token: string, body: CreateFriendNoteRequest) =>
     request<FriendNoteDto>('/api/notes', token, {
@@ -113,6 +130,8 @@ export const api = {
       token,
       { method: 'DELETE' },
     ),
+  previewAlerts: (token: string) =>
+    request<AlertPreviewDto>('/api/notifications/preview', token, { method: 'POST' }),
   sendAlertNow: (token: string) =>
     request<StashAlertDto | null>('/api/notifications/send-now', token, {
       method: 'POST',

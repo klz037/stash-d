@@ -101,8 +101,8 @@ export class PromptsService {
         source: 'fallback',
       },
       calendar: {
-        title: input.cue,
-        body: `Something soft${who} for ${input.schoolName}'s calendar beat.`,
+        title: `Happening at ${input.schoolName}`,
+        body: `${this.clip(input.cue, 90)} — stash something${who} to open after.`,
         cta: 'Stash a note',
         source: 'fallback',
       },

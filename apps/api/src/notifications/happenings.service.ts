@@ -195,9 +195,11 @@ export class HappeningsService {
       const title = this.xmlTag(block, 'title');
       const link = this.xmlTag(block, 'link');
       if (!title) continue;
-      const cleaned = this.decodeEntities(
-        title.replace(/<!\[CDATA\[|\]\]>/g, ''),
-      ).slice(0, 140);
+      const cleaned = this.decodeEntities(title.replace(/<!\[CDATA\[|\]\]>/g, ''))
+        // Google News appends " - Publisher"; the cue reads better without it.
+        .replace(/\s+-\s+[^-]{2,60}$/, '')
+        .trim()
+        .slice(0, 140);
       if (!this.isStashable(cleaned)) continue;
       const kind = this.classify(cleaned);
       items.push({
