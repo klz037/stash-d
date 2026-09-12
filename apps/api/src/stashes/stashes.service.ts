@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { LockDto } from '@stashd/shared';
+import { LockDto, MediaKind } from '@stashd/shared';
 import { Model } from 'mongoose';
 import { FriendshipsService } from '../friendships/friendships.service';
 import { GroupsService } from '../groups/groups.service';
@@ -20,7 +20,8 @@ import {
   defaultConditionLabel,
   isParticipant,
 } from './lock.engine';
-import { Lock, LockDocument } from './schemas/lock.schema';
+import { Lock, LockDocument, LockSong } from './schemas/lock.schema';
+import { SpotifyService } from '../spotify/spotify.service';
 
 @Injectable()
 export class StashesService {
@@ -29,6 +30,7 @@ export class StashesService {
     private readonly usersService: UsersService,
     private readonly friendshipsService: FriendshipsService,
     private readonly groupsService: GroupsService,
+    private readonly spotifyService: SpotifyService,
   ) {}
 
   async create(actor: UserDocument, dto: CreateLockDto): Promise<LockDocument[]> {
@@ -82,6 +84,29 @@ export class StashesService {
       })),
     );
     return docs as unknown as LockDocument[];
+    // Never trust client-supplied song metadata — re-resolve from the id so the
+    // stored album art URL is always one Spotify actually gave us.
+    let song: LockSong | null = null;
+    if (dto.songTrackId) {
+      song = await this.spotifyService.resolveTrack(actor, dto.songTrackId);
+    }
+
+    const mediaKind: MediaKind = song ? 'SONG' : dto.imageUrl ? 'PHOTO' : 'TEXT';
+
+    return this.lockModel.create({
+      senderId: actor._id,
+      recipientId,
+      text: dto.text ?? '',
+      imageUrl: dto.imageUrl,
+      song,
+      mediaKind,
+      conditionType: dto.conditionType,
+      conditionLabel: defaultConditionLabel(dto.conditionType, dto.conditionLabel),
+      state: 'LOCKED',
+      senderConfirmed: false,
+      recipientConfirmed: false,
+      unlockedAt: null,
+    });
   }
 
   async listInbox(actor: UserDocument): Promise<LockDocument[]> {
@@ -149,8 +174,12 @@ export class StashesService {
       recipientConfirmed: lock.recipientConfirmed,
       createdAt: (lock.createdAt ?? new Date()).toISOString(),
       unlockedAt: lock.unlockedAt ? lock.unlockedAt.toISOString() : null,
+      // mediaKind is metadata and stays visible while sealed; everything below
+      // it is content and is absent from the JSON until state === 'UNLOCKED'.
+      mediaKind: lock.mediaKind ?? 'TEXT',
       text: revealed ? lock.text : undefined,
       imageUrl: revealed ? lock.imageUrl : undefined,
+      song: revealed ? (lock.song ?? undefined) : undefined,
       contentHidden: !revealed,
       groupId: lock.groupId,
       groupName: lock.groupName,

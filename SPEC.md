@@ -13,7 +13,7 @@ You *stash* something (verb), and what exists afterward is a *lock* (noun). Use 
 A lock has:
 - a sender
 - a recipient (can be yourself)
-- content (text, optionally one photo)
+- content (text, and optionally **one** photo or **one** song — never both)
 - a condition, written by hand in plain language
 - a state
 
@@ -23,7 +23,7 @@ A lock has:
 
 | State | What it means | What the recipient sees |
 |---|---|---|
-| `LOCKED` | Condition not yet satisfied | Sender, age, condition text. **Never the content.** |
+| `LOCKED` | Condition not yet satisfied | Sender, age, condition text, and what *kind* of thing it is. **Never the content.** |
 | `READY` | One party has confirmed on a TOGETHER lock; waiting on the other | Same as locked, plus "they're waiting on you" |
 | `UNLOCKED` | Content released | Everything |
 
@@ -83,7 +83,7 @@ Not a separate route. It happens on the card, in place.
 
 Press and hold the sealed polaroid for ~1.5 seconds. A ring traces around the polaroid as you hold. Release early and it snaps back. Hold to completion and it opens.
 
-For `TOGETHER` locks, completing your hold fills your ring and leaves the other person's empty. The card polls every second. When their hold lands, both rings complete and the content opens simultaneously on both screens.
+For `TOGETHER` locks, completing your hold fills your ring and leaves the other person's empty. The card does not poll — it holds an authenticated Socket.IO connection and the server pushes the change. When their hold lands, both rings complete and the content opens simultaneously on both screens.
 
 This is the most important interaction in the app. Over-invest in it.
 
@@ -130,9 +130,13 @@ Every request resolves to a user identity (`sub` from the Auth0 session). Then:
 | Unlock (`TOGETHER`) | ✅ | ✅ | ❌ |
 | Set the condition (`RECIPIENT_SET`) | ❌ | ✅ | ❌ |
 | Change the condition after creation | ❌ | ❌ | ❌ |
-| Delete | ✅ | ❌ | ❌ |
+| Delete | ❌ | ❌ | ❌ |
+
+Nobody can delete. Deleting after send is listed as out of scope below, and there is no delete endpoint — the two used to disagree and this table was the one that was wrong. A lock that exists, stays.
 
 **The rule that matters:** the server strips `content` from the response for any lock in `LOCKED` or `READY` state. Not hidden in the frontend — absent from the JSON. Everything else is a detail; this is the demo.
+
+For a song, *all* of the track metadata is content — title, artist and album art alike. The album art is the reveal, so leaking it gives the lock away. The one exception is `mediaKind`, which stays visible while sealed so the Stash can show a record sleeve: **the kind of thing is metadata, the identity of it is content.** Never send a blurred version of the real cover as a teaser — a blur is often still recognisable, and it is still content.
 
 **Self-stash:** when sender and recipient are the same person, both columns apply. Handle this case explicitly or it will silently fall through to a 403.
 
@@ -168,6 +172,9 @@ Lock
   recipientId
   text
   imageUrl            (nullable)
+  song                (nullable — trackId, title, artist, albumArtUrl,
+                       spotifyUrl, previewUrl, durationMs)
+  mediaKind           TEXT | PHOTO | SONG  (visible while sealed)
   conditionType       MANUAL | TOGETHER | RECIPIENT_SET
   conditionLabel      (nullable — null until set on RECIPIENT_SET)
   state               LOCKED | READY | UNLOCKED
@@ -199,10 +206,11 @@ Every one of these starts by resolving the session and 401-ing if there isn't on
 - Auth0 login
 - Pairing by code and link
 - Self-stash
-- Text + one photoStash
+- Text + one photo
+- Songs from Spotify: stash what you're listening to, album art is the reveal
 - Three condition types
 - Hold to unlock
-- Together-unlock with 1s polling
+- Together-unlock pushed over a live socket
 - The Stash, Sent, Capture
 
 ## Explicitly out of scope
@@ -227,10 +235,10 @@ Cut these now, add back only if you're ahead at hour 20.
 
 ---
 
-## Open questions
+## Resolved
 
-Resolve before hour two.
+These were the open questions. They are answered, the code matches, and the answers live here rather than in the README.
 
-1. Is a friendship required before you can stash to someone, or is a pairing code enough on its own?
-2. Can you stash to someone who hasn't signed up yet?
-3. Does the sender get told when their lock is opened?
+1. **Is a friendship required before you can stash to someone?** Yes. You can stash to yourself or to someone you are paired with, nobody else. Enforced server-side in `StashesService.create`, not just by the recipient picker.
+2. **Can you stash to someone who hasn't signed up yet?** No. The recipient must already exist. (The invite-link-that-carries-a-lock idea in `PAIRING.md` remains a stretch goal and would change this.)
+3. **Does the sender get told when their lock is opened?** Yes, live over the socket — `lock:unlocked`. This is the one push the app makes, and it is not a device notification. The app still deliberately doesn't buzz you.

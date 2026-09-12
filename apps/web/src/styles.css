@@ -548,4 +548,126 @@ button {
 .choice-meta {
   color: var(--ink-soft);
   font-size: 0.82rem;
+/* --- songs -------------------------------------------------------------- */
+
+/* The sealed state for a song: a record sleeve, never the real cover.
+   A blurred version of the real art would still be content. */
+.sleeve {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 14px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #2a211a 0%, #4a3b2e 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 253, 248, 0.14);
+}
+
+.sleeve-disc {
+  position: absolute;
+  top: 50%;
+  right: -16px;
+  width: 74px;
+  height: 74px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, var(--paper) 0 12%, transparent 12%),
+    repeating-radial-gradient(circle at center, #1a1410 0 2px, #241d17 2px 4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.song-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.song-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.song-meta strong {
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.song-meta span {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+
+.song-preview {
+  width: 100%;
+  height: 36px;
+}
+
+.song-open {
+  text-align: center;
+  text-decoration: none;
+  display: block;
+}
+
+.song-section {
+  margin: 16px 0 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.song-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  border-radius: 14px;
+  padding: 8px 12px 8px 8px;
+}
+
+.song-row:hover {
+  border-color: var(--accent);
+}
+
+.song-art-sm {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+}
+
+.song-chosen {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--polaroid);
+  margin-bottom: 12px;
+}
+
+.song-art {
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: none;
 }

@@ -11,10 +11,6 @@ node_modules
 # testing
 coverage
 
-# next.js (legacy scaffold)
-.next/
-out/
-
 # production
 dist
 build
