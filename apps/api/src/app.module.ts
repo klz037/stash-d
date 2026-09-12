@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
 import { UserSyncInterceptor } from './auth/user-sync.interceptor';
 import { CalendarModule } from './calendar/calendar.module';
@@ -11,6 +12,8 @@ import { HealthModule } from './health/health.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { StashesModule } from './stashes/stashes.module';
 import { NotesModule } from './notes/notes.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { PromptsModule } from './prompts/prompts.module';
 import { SpotifyModule } from './spotify/spotify.module';
 import { UsersModule } from './users/users.module';
 
@@ -26,6 +29,7 @@ import { UsersModule } from './users/users.module';
         uri: config.get<string>('MONGODB_URI', 'mongodb://127.0.0.1:27017/stashd'),
       }),
     }),
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     NotesModule,
@@ -34,6 +38,8 @@ import { UsersModule } from './users/users.module';
     CalendarModule,
     SpotifyModule,
     StashesModule,
+    PromptsModule,
+    NotificationsModule,
     RealtimeModule,
     HealthModule,
   ],
