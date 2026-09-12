@@ -1,25 +1,39 @@
 :root {
-  --paper: #f3ead8;
-  --paper-deep: #e7d8bc;
-  --ink: #1c1612;
-  --ink-soft: #5c5148;
-  --line: rgba(28, 22, 18, 0.12);
-  --accent: #c24a2a;
-  --accent-deep: #8f2f18;
-  --polaroid: #fffdf8;
-  --shadow: 0 18px 40px rgba(70, 42, 20, 0.16);
+  /* --- the palette -------------------------------------------------------
+     Ink page, Bone type, Ash metadata. Ember is reserved: it means
+     ready-to-open and nothing else, so it never appears as decoration. */
+  --background: #1e2433;
+  --foreground: #f2ede3;
+  --muted-foreground: #8a8270;
+  --accent: #e08a2c;
+  --surface: #f2ede3;
+
+  /* Chrome that lifts off the page: menus, chips, inputs, sheets. Ink, a
+     step lighter, so panels read without going Bone. */
+  --surface-raised: #2a3142;
+  /* Errors must not borrow Ember — that colour means one thing. */
+  --danger: #e8705a;
+
+  /* Legacy names kept so the whole sheet inverts at once. --ink was used as
+     BOTH a text colour and a fill; the places that used it as a fill are
+     corrected individually below. */
+  --paper: var(--background);
+  --ink: var(--foreground);
+  --ink-soft: var(--muted-foreground);
+  --polaroid: var(--surface-raised);
+  --line: rgba(242, 237, 227, 0.16);
+  --accent-deep: #f0a250;
+  --shadow: 0 20px 44px rgba(0, 0, 0, 0.5);
 
   /* The drawn icon set. Every icon file fills with `currentColor`, so these two
      are the whole ink/bone story — no second file, no second copy. */
   --icon-ink: #1e2433;
   --icon-bone: #f2ede3;
-  /* Muted caption grey. Aliased to the app's existing soft ink so icon captions
-     match the rest of the type. */
-  --ash: var(--ink-soft);
+  --ash: var(--muted-foreground);
 
-  color: var(--ink);
+  color: var(--foreground);
   font-family: Sora, system-ui, sans-serif;
-  background: var(--paper);
+  background: var(--background);
 }
 
 /* Handwriting for anything that should read as the sender's own hand. */
@@ -33,10 +47,19 @@
 
 /* Inline drawn icon. Width is set by the caller; height always comes from the
    viewBox so nothing is ever squashed. */
+/* Colourway follows the surface: the page is Ink, so icons default to Bone.
+   Anything sitting on a Bone surface overrides back to Ink. */
 .icon {
   display: inline-block;
   flex: none;
   line-height: 0;
+  color: var(--icon-bone);
+}
+
+/* Icons on Bone surfaces. */
+.polaroid .icon,
+.avatar .icon,
+.capture button .icon {
   color: var(--icon-ink);
 }
 
@@ -57,10 +80,9 @@ body,
   margin: 0;
 }
 
+/* No ambient tint: Ember is reserved for the ready state. */
 body {
-  background:
-    radial-gradient(circle at 20% 0%, rgba(194, 74, 42, 0.08), transparent 28%),
-    var(--paper);
+  background: var(--background);
 }
 
 button,
@@ -83,7 +105,7 @@ button {
 .phone {
   width: min(100%, 420px);
   height: calc(100dvh - 32px);
-  background: linear-gradient(180deg, #f7f0e2 0%, #efe4cc 100%);
+  background: linear-gradient(180deg, #232b3d 0%, #1a2029 100%);
   border: 1px solid var(--line);
   border-radius: 28px;
   box-shadow: var(--shadow);
@@ -122,7 +144,7 @@ button {
 }
 
 .wordmark span {
-  color: var(--accent);
+  color: var(--foreground);
 }
 
 .pane-track {
@@ -162,11 +184,17 @@ button {
   margin: 0 0 8px;
 }
 
-/* The clothesline is an illustration, not an icon: it stays at its drawn width
-   and is allowed to overflow a narrow phone rather than shrink into mush. */
+/* The clothesline is an illustration, not an icon: it hangs edge to edge.
+   It breaks out of both enclosing gutters so the ends of the line always
+   touch the sides of the phone, and scales with the screen — width drives
+   it, height follows the viewBox, so the rope never stretches. */
 .empty-illustration {
+  /* .pane's 16px side padding + .empty's own 8px. */
+  --bleed: 24px;
   display: block;
-  margin: 4px auto 0;
+  width: calc(100% + var(--bleed) * 2);
+  max-width: none;
+  margin: 4px 0 0 calc(var(--bleed) * -1);
   opacity: 0.5;
 }
 
@@ -180,9 +208,9 @@ button {
 .code-block {
   margin: 22px 0 12px;
   padding: 16px;
-  border: 1px dashed rgba(194, 74, 42, 0.35);
+  border: 1px dashed rgba(224, 138, 44, 0.45);
   border-radius: 16px;
-  background: rgba(255, 253, 248, 0.7);
+  background: rgba(242, 237, 227, 0.06);
 }
 
 .code-block strong {
@@ -200,9 +228,10 @@ button {
   width: 100%;
 }
 
+/* Primary action: Bone fill, Ink label — the inverse of the old light theme. */
 .btn {
-  background: var(--ink);
-  color: #fffdf8;
+  background: var(--foreground);
+  color: var(--background);
 }
 
 .btn[disabled] {
@@ -268,12 +297,14 @@ button {
 
 .polaroid {
   --tilt: 0deg;
-  background: #fdfcf8;
+  /* A physical object sitting on the dark surface: the card does NOT invert. */
+  background: var(--surface);
+  color: var(--background);
   border-radius: 3px;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.9) inset,
-    0 14px 30px rgba(70, 42, 20, 0.22),
-    0 2px 4px rgba(70, 42, 20, 0.12);
+    0 1px 0 rgba(255, 255, 255, 0.55) inset,
+    0 16px 34px rgba(0, 0, 0, 0.45),
+    0 2px 6px rgba(0, 0, 0, 0.3);
   padding: 8px 8px 10px;
   position: relative;
   touch-action: none;
@@ -356,7 +387,7 @@ button {
 }
 
 .polaroid.here .undeveloped-hint {
-  color: #ffd9c9;
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -379,9 +410,33 @@ button {
   line-height: 1.1;
   overflow-wrap: anywhere;
   margin: 0;
-  color: #1c1612;
+  color: var(--background);
   transform: rotate(-0.6deg);
   transform-origin: left;
+}
+
+/* --- inside the Bone card ---------------------------------------------
+   The card never inverts, so anything in it that would otherwise pick up
+   the Ink chrome colours is pinned back to Ink-on-Bone here. */
+.polaroid .btn {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.polaroid .btn-ghost {
+  color: var(--background);
+  border-color: rgba(30, 36, 51, 0.28);
+}
+
+.polaroid .field input {
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(30, 36, 51, 0.24);
+  color: var(--background);
+}
+
+.polaroid .field label,
+.polaroid .caption {
+  color: var(--background);
 }
 
 .meta {
@@ -439,7 +494,7 @@ button {
   border-radius: 50%;
   border: 6px solid #fffdf8;
   background: var(--accent);
-  box-shadow: 0 10px 24px rgba(194, 74, 42, 0.35);
+  box-shadow: 0 10px 24px rgba(224, 138, 44, 0.45);
   display: grid;
   place-items: center;
 }
@@ -447,7 +502,7 @@ button {
 .sheet {
   position: absolute;
   inset: 0;
-  background: rgba(28, 22, 18, 0.28);
+  background: rgba(8, 10, 16, 0.62);
   display: flex;
   align-items: flex-end;
 }
@@ -521,8 +576,8 @@ button {
 }
 
 .toast {
-  background: var(--ink);
-  color: #fffdf8;
+  background: var(--foreground);
+  color: var(--background);
   border-radius: 12px;
   padding: 10px 12px;
   font-size: 0.86rem;
@@ -535,7 +590,7 @@ button {
 }
 
 .error {
-  color: var(--accent-deep);
+  color: var(--danger);
   font-size: 0.88rem;
 }
 
@@ -616,7 +671,7 @@ button {
 .prompt-card {
   min-width: min(100%, 280px);
   scroll-snap-align: start;
-  background: rgba(255, 253, 248, 0.72);
+  background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 18px;
   padding: 14px 16px;
@@ -662,7 +717,7 @@ button {
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: rgba(255, 253, 248, 0.8);
+  background: var(--surface-raised);
 }
 
 .account .field {
@@ -812,7 +867,7 @@ button {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  border: 1.5px solid rgba(28, 22, 18, 0.35);
+  border: 1.5px solid rgba(242, 237, 227, 0.4);
   background: transparent;
   transition: background 200ms ease;
 }
@@ -860,7 +915,7 @@ button {
 
 /* A card whose condition just came true glows until it's held. */
 .polaroid.here .frame {
-  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.35);
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(224, 138, 44, 0.45);
 }
 
 .here-hint {
@@ -907,8 +962,8 @@ button {
   border-radius: 50%;
   border: 0;
   padding: 0;
-  background: var(--ink);
-  color: #fffdf8;
+  background: var(--surface);
+  color: var(--background);
   font-weight: 600;
   font-size: 0.95rem;
   display: grid;
@@ -924,10 +979,10 @@ button {
   display: block;
 }
 
-/* The drawn profile icon, standing in when there's no photo. `.avatar` is
-   filled with var(--ink), a dark surface, so the icon goes bone. */
+/* The drawn profile icon, standing in when there's no photo. The circle is a
+   Bone surface on the Ink page, so the icon inside it is Ink. */
 .avatar .icon {
-  color: var(--icon-bone);
+  color: var(--icon-ink);
 }
 
 .avatar.small {
@@ -1010,7 +1065,7 @@ button {
 }
 
 .brand-big span {
-  color: var(--accent);
+  color: var(--foreground);
 }
 
 .review-card {
@@ -1258,12 +1313,12 @@ button {
   height: 10px;
   border-radius: 50%;
   background: var(--accent);
-  border: 2px solid var(--polaroid);
+  border: 2px solid var(--background);
 }
 
 .menu-count.pill {
   background: var(--accent);
-  color: #fffdf8;
+  color: var(--background);
   border-radius: 999px;
   padding: 2px 8px;
   font-weight: 600;
@@ -1280,7 +1335,7 @@ button {
   position: absolute;
   inset: 0;
   z-index: 7;
-  background: rgba(28, 22, 18, 0.32);
+  background: rgba(8, 10, 16, 0.66);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1317,11 +1372,11 @@ button {
 
 /* A card waiting on me right now, while they hold. */
 .polaroid.urgent .frame {
-  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(224, 138, 44, 0.65);
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 @keyframes pulse {
-  0%, 100% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.55); }
-  50% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 6px rgba(194, 74, 42, 0.2); }
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(224, 138, 44, 0.65); }
+  50% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 6px rgba(224, 138, 44, 0.22); }
 }
