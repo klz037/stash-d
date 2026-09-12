@@ -83,7 +83,7 @@ Not a separate route. It happens on the card, in place.
 
 Press and hold the sealed polaroid for ~1.5 seconds. A ring traces around the polaroid as you hold. Release early and it snaps back. Hold to completion and it opens.
 
-For `TOGETHER` locks, completing your hold fills your ring and leaves the other person's empty. The card polls every second. When their hold lands, both rings complete and the content opens simultaneously on both screens.
+For `TOGETHER` locks, completing your hold fills your ring and leaves the other person's empty. The card does not poll — it holds an authenticated Socket.IO connection and the server pushes the change. When their hold lands, both rings complete and the content opens simultaneously on both screens.
 
 This is the most important interaction in the app. Over-invest in it.
 
@@ -130,7 +130,9 @@ Every request resolves to a user identity (`sub` from the Auth0 session). Then:
 | Unlock (`TOGETHER`) | ✅ | ✅ | ❌ |
 | Set the condition (`RECIPIENT_SET`) | ❌ | ✅ | ❌ |
 | Change the condition after creation | ❌ | ❌ | ❌ |
-| Delete | ✅ | ❌ | ❌ |
+| Delete | ❌ | ❌ | ❌ |
+
+Nobody can delete. Deleting after send is listed as out of scope below, and there is no delete endpoint — the two used to disagree and this table was the one that was wrong. A lock that exists, stays.
 
 **The rule that matters:** the server strips `content` from the response for any lock in `LOCKED` or `READY` state. Not hidden in the frontend — absent from the JSON. Everything else is a detail; this is the demo.
 
@@ -202,7 +204,7 @@ Every one of these starts by resolving the session and 401-ing if there isn't on
 - Text + one photoStash
 - Three condition types
 - Hold to unlock
-- Together-unlock with 1s polling
+- Together-unlock pushed over a live socket
 - The Stash, Sent, Capture
 
 ## Explicitly out of scope
@@ -227,10 +229,10 @@ Cut these now, add back only if you're ahead at hour 20.
 
 ---
 
-## Open questions
+## Resolved
 
-Resolve before hour two.
+These were the open questions. They are answered, the code matches, and the answers live here rather than in the README.
 
-1. Is a friendship required before you can stash to someone, or is a pairing code enough on its own?
-2. Can you stash to someone who hasn't signed up yet?
-3. Does the sender get told when their lock is opened?
+1. **Is a friendship required before you can stash to someone?** Yes. You can stash to yourself or to someone you are paired with, nobody else. Enforced server-side in `StashesService.create`, not just by the recipient picker.
+2. **Can you stash to someone who hasn't signed up yet?** No. The recipient must already exist. (The invite-link-that-carries-a-lock idea in `PAIRING.md` remains a stretch goal and would change this.)
+3. **Does the sender get told when their lock is opened?** Yes, live over the socket — `lock:unlocked`. This is the one push the app makes, and it is not a device notification. The app still deliberately doesn't buzz you.

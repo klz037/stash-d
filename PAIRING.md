@@ -96,10 +96,10 @@ getOrCreateUser  →  B now exists, with their own code
    ↓
 redeem KRF2M9  →  friendship created
    ↓
-land on the Shelf
+land on the Stash
 ```
 
-That `returnTo` parameter is the whole trick. Without it, a new user logs in and lands on an empty shelf with no idea why they clicked the link. With it, the pairing survives the round trip through Auth0.
+That `returnTo` parameter is the whole trick. Without it, a new user logs in and lands on an empty Stash with no idea why they clicked the link. With it, the pairing survives the round trip through Auth0.
 
 **Copy while they wait:** "Getting you connected to Maya." Not a spinner with nothing on it.
 
@@ -129,7 +129,7 @@ Always sort the pair before inserting. Otherwise you get two rows for the same f
 | Input | Behavior |
 |---|---|
 | Your own code | "That's your code. Send it to a friend instead." |
-| Already paired | No error. Navigate to the Shelf as if it worked. |
+| Already paired | No error. Navigate to the Stash as if it worked. |
 | Code doesn't exist | "We couldn't find that code. Check the letters?" |
 | Lowercase / spaces / hyphens | Normalize silently. Always works. |
 | Not logged in | `returnTo` through Auth0, then redeem. |
@@ -142,7 +142,7 @@ Nothing here should ever produce a stack trace or a raw 404 page. It's the first
 
 There is no nav bar, so pairing needs homes that aren't a settings screen.
 
-**Primary: the empty Shelf.** If nothing is waiting for you, the Shelf *is* the pairing screen.
+**Primary: the empty Stash.** If nothing is waiting for you, the Stash *is* the pairing screen.
 
 ```
         Nothing's waiting for you yet.
@@ -225,7 +225,7 @@ Instead of "join my app," the invite is:
 > **Maya stashed something for you.**
 > Sign in to see what's waiting.
 
-The sender picks "someone who isn't here yet," writes the lock, and gets a link. The recipient's very first screen after login is a sealed card, not an empty shelf.
+The sender picks "someone who isn't here yet," writes the lock, and gets a link. The recipient's very first screen after login is a sealed polaroid, not an empty Stash.
 
 Implementation sketch: give `Lock` a nullable `pendingRecipientCode`. Create the lock with `recipientId = null` and a one-time invite token. On successful pair, claim any pending locks matching that token and set `recipientId`.
 
