@@ -445,6 +445,7 @@ export function HomePage() {
         <div className="account">
           <p>
             {me.displayName} · {me.pairingCodeDisplay}
+            {mfaStepUp ? ` · Second key: ${me.mfa ? 'on' : 'off'}` : ''}
           </p>
           {nameForm}
           <label className="field">
@@ -546,6 +547,7 @@ export function HomePage() {
                   key={lock.id}
                   lock={lock}
                   viewerId={viewerId}
+                  hasMfa={me?.mfa}
                   onConfirm={confirm}
                 />
               ))
@@ -652,6 +654,7 @@ export function HomePage() {
                     key={lock.id}
                     lock={lock}
                     viewerId={viewerId}
+                    hasMfa={me?.mfa}
                     onConfirm={confirm}
                     onSetCondition={setCondition}
                     onReply={(recipientId) => {

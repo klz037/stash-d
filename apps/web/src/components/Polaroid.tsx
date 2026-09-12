@@ -8,9 +8,12 @@ export function Polaroid({
   onConfirm,
   onSetCondition,
   onReply,
+  hasMfa,
 }: {
   lock: LockDto;
   viewerId: string;
+  /** Whether the viewer's current token already carries the MFA claim. */
+  hasMfa?: boolean;
   onConfirm: (id: string) => Promise<void>;
   onSetCondition?: (id: string, label: string) => Promise<void>;
   onReply?: (recipientId: string) => void;
@@ -168,7 +171,9 @@ export function Polaroid({
             {hereHint ? <p className="hint here-hint">{hereHint}</p> : null}
             {readyHint ? <p className="hint">{readyHint}</p> : null}
             {lock.requiresMfa && isRecipient ? (
-              <p className="hint">Needs your second key.</p>
+              <p className="hint">
+                {hasMfa ? 'Second key ready.' : 'Needs your second key. Holding will ask for it.'}
+              </p>
             ) : null}
             {canHold && !hereHint ? <p className="hint">Hold to unlock</p> : null}
           </div>

@@ -61,6 +61,11 @@ export interface UserDto {
   weeklyRitual?: string;
   /** Whether Spotify is linked. The tokens themselves never leave the server. */
   spotifyConnected?: boolean;
+  /**
+   * Whether the access token this request came in on carries the MFA claim.
+   * Per session, not per user: read from the token, never stored.
+   */
+  mfa?: boolean;
 }
 
 export interface FriendDto {
