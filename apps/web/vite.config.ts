@@ -8,9 +8,15 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-        strategies: 'injectManifest',
-        srcDir: 'src',
-        filename: 'sw.js',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
+      // Register the worker under `vite dev` too, so notification clicks route the same way as in prod.
+      devOptions: {
+        enabled: true,
+        type: 'module',
+        suppressWarnings: true,
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: "stash'd",
