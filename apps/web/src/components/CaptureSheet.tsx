@@ -332,7 +332,13 @@ export function CaptureSheet({
     setMomentDraft('');
   }
 
+  /** Tap a chip to use it; tap it again to clear it. */
   function pickSuggestion(label: string) {
+    if (conditionLabel === label) {
+      autoLabel.current = '';
+      setConditionLabel('');
+      return;
+    }
     autoLabel.current = label;
     setConditionLabel(label);
   }
@@ -593,6 +599,11 @@ export function CaptureSheet({
                     {campus?.nextGame && campus.mascot ? (
                       <small>
                         {campus.mascot}: {campus.nextGame.label} {whenLabel(campus.nextGame.daysAway)}
+                      </small>
+                    ) : null}
+                    {campus && campus.quirks.length > 0 ? (
+                      <small>
+                        Ask about {campus.quirks.slice(0, 3).map((q) => q.label).join(' · ')}
                       </small>
                     ) : null}
                   </div>

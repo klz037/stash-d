@@ -607,7 +607,7 @@ export function HomePage() {
     return [
       ...skyPrompts,
       ...buildPrompts({ me, friends, inbox, sent, weather, calendar: calendar?.events }),
-    ].slice(0, 5);
+    ].slice(0, 8);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, friends, inbox, sent, mySky, skyPrompts, calendar, promptTick]);
 
@@ -978,6 +978,14 @@ export function HomePage() {
       {alert && !capturing ? (
         <div className="alert-sheet" role="dialog" aria-modal="true">
           <div className="alert-card">
+            <button
+              className="alert-close"
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => dropAlert(alert.id)}
+            >
+              ×
+            </button>
             {alert.kind === 'request' ? (
               <>
                 <span className="avatar">
@@ -997,9 +1005,6 @@ export function HomePage() {
                 <button className="btn" type="button" onClick={() => void answerRequest(alert.request, true)}>
                   Accept
                 </button>
-                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
-                  Later
-                </button>
               </>
             ) : alert.kind === 'opening' ? (
               <>
@@ -1010,9 +1015,6 @@ export function HomePage() {
                 <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
                   Open together
                 </button>
-                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
-                  Not now
-                </button>
               </>
             ) : (
               <>
@@ -1020,9 +1022,6 @@ export function HomePage() {
                 <p className="lede">Yours is still sealed. Take a look when you're ready.</p>
                 <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
                   Take a look
-                </button>
-                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
-                  Later
                 </button>
               </>
             )}
@@ -1240,7 +1239,7 @@ export function HomePage() {
           people={people}
           skies={skies}
           knownMoments={knownMoments}
-          eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 14).slice(0, 2)}
+          eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 21).slice(0, 3)}
           campusFor={(schoolId) => campusFor(schoolId)}
           token={token}
           presetRecipientId={replyTo}
