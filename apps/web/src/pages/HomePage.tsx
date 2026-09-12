@@ -1386,11 +1386,9 @@ export function HomePage() {
 
           {empty ? (
             <div className="empty">
-              <Icon
-                name="empty-clothesline"
-                width={260}
-                className="empty-illustration"
-              />
+              {/* Width is owned by .empty-illustration so the line can reach
+                  both edges of the phone at any screen size. */}
+              <Icon name="empty-clothesline" className="empty-illustration" />
               <p className="empty-line">nothing on the line yet.</p>
               {me ? (
                 <div className="code-block">

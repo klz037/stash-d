@@ -52,8 +52,13 @@ export function Icon({
   title,
 }: {
   name: IconName;
-  /** Width in px. Height is always left to the viewBox. */
-  width: number;
+  /**
+   * Width in px, or any CSS length. Height is always left to the viewBox.
+   * Omit it only when a stylesheet owns the width — as the full-bleed
+   * clothesline does — so there is one source of truth rather than an
+   * inline value and a rule fighting over it.
+   */
+  width?: number | string;
   className?: string;
   style?: CSSProperties;
   title?: string;
@@ -67,7 +72,7 @@ export function Icon({
   return (
     <span
       className={`icon ${className ?? ''}`}
-      style={{ width, ...style }}
+      style={{ ...(width === undefined ? null : { width }), ...style }}
       role={title ? 'img' : undefined}
       aria-label={title}
       aria-hidden={title ? undefined : true}

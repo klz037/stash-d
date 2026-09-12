@@ -33,13 +33,39 @@ export class UsersService {
       return existing;
     }
 
-    return this.userModel.create({
-      _id: claims.sub,
-      displayName: claims.name || claims.email || 'Friend',
-      email: claims.email,
-      picture: claims.picture,
-      pairingCode: await this.uniquePairingCode(),
-    });
+    try {
+      return await this.userModel.create({
+        _id: claims.sub,
+        displayName: claims.name || claims.email || 'Friend',
+        email: claims.email,
+        picture: claims.picture,
+        pairingCode: await this.uniquePairingCode(),
+      });
+    } catch (error: any) {
+      if (error?.code !== 11000) {
+        throw error;
+      }
+
+      const retry = await this.userModel.findById(claims.sub).exec();
+      if (!retry) {
+        throw error;
+      }
+
+      const nextName = retry.displayNameSet ? retry.displayName : (claims.name ?? retry.displayName);
+      const nextEmail = claims.email ?? retry.email;
+      const nextPicture = claims.picture ?? retry.picture;
+      if (
+        retry.displayName !== nextName ||
+        retry.email !== nextEmail ||
+        retry.picture !== nextPicture
+      ) {
+        retry.displayName = nextName;
+        retry.email = nextEmail;
+        retry.picture = nextPicture;
+        await retry.save();
+      }
+      return retry;
+    }
   }
 
   async findById(id: string): Promise<UserDocument | null> {
