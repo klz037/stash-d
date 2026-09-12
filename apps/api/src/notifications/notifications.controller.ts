@@ -12,11 +12,12 @@ import {
 import type {
   AlertPreviewDto,
   NotificationsStatusDto,
-  StashAlertDto,
+  SendAlertNowResponse,
 } from '@stashd/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { UserDocument } from '../users/schemas/user.schema';
+import { PreviewAlertsDto, SendAlertNowDto } from './dto/alert-request.dto';
 import { SavePushSubscriptionDto } from './dto/push-subscription.dto';
 import { NotificationsService } from './notifications.service';
 
@@ -49,13 +50,19 @@ export class NotificationsController {
   }
 
   @Post('preview')
-  preview(@CurrentUser() user: UserDocument): Promise<AlertPreviewDto> {
-    return this.notifications.preview(user);
+  preview(
+    @CurrentUser() user: UserDocument,
+    @Body() body?: PreviewAlertsDto,
+  ): Promise<AlertPreviewDto> {
+    return this.notifications.preview(user, body?.seed);
   }
 
   @Post('send-now')
-  sendNow(@CurrentUser() user: UserDocument): Promise<StashAlertDto | null> {
-    return this.notifications.sendNow(user);
+  sendNow(
+    @CurrentUser() user: UserDocument,
+    @Body() body?: SendAlertNowDto,
+  ): Promise<SendAlertNowResponse> {
+    return this.notifications.sendNow(user, body?.draft);
   }
 
   @Post(':id/ack')

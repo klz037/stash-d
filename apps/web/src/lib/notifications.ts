@@ -24,19 +24,23 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
  * Returns the resulting status or throws a human-readable error.
  */
 export async function enableStashAlerts(token: string): Promise<NotificationsStatusDto> {
-  if (!pushSupported()) {
-    throw new Error('This browser cannot show stash alerts. Add stash\u2019d to your home screen first.');
+  if (!notificationsSupported()) {
+    throw new Error('This browser cannot show notifications.');
   }
 
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') {
-    throw new Error('Alerts stay off until you allow notifications.');
+    throw new Error(
+      permission === 'denied'
+        ? 'Notifications are blocked for this site. Allow them in the address bar, then try again.'
+        : 'Alerts stay off until you allow notifications.',
+    );
   }
 
   const status = await api.notificationsStatus(token);
-  const registration = await navigator.serviceWorker.ready;
+  const registration = pushSupported() ? await activeRegistration() : null;
 
-  if (status.pushConfigured && status.vapidPublicKey) {
+  if (registration && status.pushConfigured && status.vapidPublicKey) {
     const existing = await registration.pushManager.getSubscription();
     const subscription =
       existing ??
@@ -61,8 +65,8 @@ export async function enableStashAlerts(token: string): Promise<NotificationsSta
 
 export async function disableStashAlerts(token: string): Promise<void> {
   try {
-    const registration = await navigator.serviceWorker.ready;
-    const existing = await registration.pushManager.getSubscription();
+    const registration = await activeRegistration();
+    const existing = await registration?.pushManager.getSubscription();
     if (existing) {
       await api.unsubscribePush(token, existing.endpoint);
       await existing.unsubscribe();
@@ -73,7 +77,33 @@ export async function disableStashAlerts(token: string): Promise<void> {
   await api.updateProfile(token, { stashAlertsEnabled: false });
 }
 
-/** Foreground fallback when push isn't configured: still surface as an OS notification. */
+/** Whether this browser can show OS notifications at all (no push server needed). */
+export function notificationsSupported(): boolean {
+  return typeof window !== 'undefined' && 'Notification' in window;
+}
+
+export type LocalAlertResult = 'shown' | 'denied' | 'unsupported';
+
+/** Resolves with the active registration, or null if the worker isn't up (e.g. `vite dev`). */
+async function activeRegistration(timeoutMs = 1500): Promise<ServiceWorkerRegistration | null> {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    const existing = await navigator.serviceWorker.getRegistration();
+    if (existing?.active) return existing;
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Show an alert as a real OS notification on this computer. Goes through the
+ * service worker when one is active (so clicks route through `notificationclick`),
+ * otherwise falls back to the page-level Notification API.
+ */
 export async function showLocalAlert(alert: {
   id?: string;
   title: string;
@@ -81,23 +111,41 @@ export async function showLocalAlert(alert: {
   friendId?: string;
   friendName?: string;
   suggestedCondition?: string;
-}): Promise<boolean> {
-  if (!pushSupported()) return false;
+}): Promise<LocalAlertResult> {
+  if (!notificationsSupported()) return 'unsupported';
   if (Notification.permission !== 'granted') {
     const permission = await Notification.requestPermission();
-    if (permission !== 'granted') return false;
+    if (permission !== 'granted') return 'denied';
   }
-  const registration = await navigator.serviceWorker.ready;
+
   const params = new URLSearchParams();
   if (alert.friendId) params.set('stashFor', alert.friendId);
   if (alert.suggestedCondition) params.set('condition', alert.suggestedCondition);
   if (alert.id && !alert.id.startsWith('preview-')) params.set('alert', alert.id);
-  await registration.showNotification(alert.title, {
+  const url = `/?${params.toString()}`;
+  const options: NotificationOptions = {
     body: alert.body,
     icon: '/pwa-192.png',
     badge: '/pwa-192.png',
-    tag: `stashd-alert-${alert.id ?? 'local'}`,
-    data: { url: `/?${params.toString()}` },
-  });
-  return true;
+    tag: `stashd-alert-${alert.id ?? Date.now()}`,
+    data: { url },
+  };
+
+  const registration = await activeRegistration();
+  if (registration) {
+    try {
+      await registration.showNotification(alert.title, options);
+      return 'shown';
+    } catch {
+      // Fall through to the page-level API.
+    }
+  }
+
+  const notification = new Notification(alert.title, options);
+  notification.onclick = () => {
+    window.focus();
+    window.location.assign(url);
+    notification.close();
+  };
+  return 'shown';
 }

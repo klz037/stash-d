@@ -8,6 +8,7 @@ import {
   NotificationsStatusDto,
   PromptDto,
   SOCKET_EVENTS,
+  StashAlertDto,
   UserDto,
 } from '@stashd/shared';
 import { useAuth0 } from '@auth0/auth0-react';
@@ -22,7 +23,8 @@ import { api } from '../lib/api';
 import {
   disableStashAlerts,
   enableStashAlerts,
-  pushSupported,
+  LocalAlertResult,
+  notificationsSupported,
   showLocalAlert,
 } from '../lib/notifications';
 import {
@@ -579,16 +581,23 @@ export function HomePage() {
     }
   }
 
-  const loadPreview = useCallback(async () => {
-    setPreviewLoading(true);
-    try {
-      setPreview(await api.previewAlerts(tokenRef.current || (await token())));
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'Could not build a preview.');
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, [token, toast]);
+  // First open shows today's real plan; every "Regenerate" reshuffles with a fresh seed.
+  const loadPreview = useCallback(
+    async (reshuffle = false) => {
+      setPreviewLoading(true);
+      try {
+        const access = tokenRef.current || (await token());
+        setPreview(
+          await api.previewAlerts(access, reshuffle ? { seed: String(Date.now()) } : {}),
+        );
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Could not build a preview.');
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    [token, toast],
+  );
 
   function openPreview() {
     setPreviewOpen(true);
@@ -596,19 +605,57 @@ export function HomePage() {
     void loadPreview();
   }
 
-  async function sendTestAlert() {
+  function describeLocalResult(result: LocalAlertResult, fallback: string) {
+    switch (result) {
+      case 'shown':
+        return fallback;
+      case 'denied':
+        return 'Notifications are blocked for this site. Allow them in the address bar and try again.';
+      default:
+        return 'This browser cannot show notifications.';
+    }
+  }
+
+  /**
+   * Store one alert for real (it counts toward today's cap) and pop it on this
+   * computer. If Web Push reached a subscribed device we skip the local pop so
+   * the same alert doesn't show twice.
+   */
+  async function sendTestAlert(draft?: StashAlertDto) {
     if (alertBusy) return;
     setAlertBusy(true);
     try {
       const access = tokenRef.current || (await token());
-      const sentAlert = await api.sendAlertNow(access);
+      const { alert: sentAlert, reason } = await api.sendAlertNow(
+        access,
+        draft
+          ? {
+              draft: {
+                title: draft.title,
+                body: draft.body,
+                kind: draft.kind,
+                friendId: draft.friendId,
+                friendName: draft.friendName,
+                schoolId: draft.schoolId,
+                schoolName: draft.schoolName,
+                sourceLabel: draft.sourceLabel,
+                sourceUrl: draft.sourceUrl,
+                suggestedCondition: draft.suggestedCondition,
+              },
+            }
+          : {},
+      );
       if (!sentAlert) {
-        toast('Budget spent for today, or no friend has a school set.');
+        toast(
+          reason === 'no-friends'
+            ? 'Add a friend with a school set first.'
+            : 'Nothing fresh to say about their schools right now.',
+        );
+      } else if (sentAlert.deliveredPush) {
+        toast(`Sent to your devices: ${sentAlert.title}`);
       } else {
-        if (!alertStatus?.pushConfigured) {
-          await showLocalAlert(sentAlert);
-        }
-        toast(`Sent: ${sentAlert.title}`);
+        const result = await showLocalAlert(sentAlert);
+        toast(describeLocalResult(result, `Sent: ${sentAlert.title}`));
       }
       await loadAlertStatus();
     } catch (err) {
@@ -1086,9 +1133,9 @@ export function HomePage() {
             <span>
               Stash alerts
               <span className="hint">
-                {pushSupported()
-                  ? 'Device pop-ups about your friends\u2019 campuses. Max 3\u20134 a day, never overnight.'
-                  : 'Add stash\u2019d to your home screen to get device alerts.'}
+                {notificationsSupported()
+                  ? 'Pop-ups about your friends\u2019 campuses. Max 3\u20134 a day, never overnight.'
+                  : 'This browser cannot show notifications.'}
               </span>
             </span>
             <button
@@ -1384,17 +1431,14 @@ export function HomePage() {
           loading={previewLoading}
           pushConfigured={Boolean(alertStatus?.pushConfigured)}
           onClose={() => setPreviewOpen(false)}
-          onRefresh={() => void loadPreview()}
+          busy={alertBusy}
+          onRefresh={() => void loadPreview(true)}
           onPop={(item) => {
-            void showLocalAlert(item).then((shown) => {
-              toast(
-                shown
-                  ? 'Check your notification center.'
-                  : 'Allow notifications for this site to see the pop-up.',
-              );
+            void showLocalAlert(item).then((result) => {
+              toast(describeLocalResult(result, 'Popped — check the corner of your screen.'));
             });
           }}
-          onSendReal={() => void sendTestAlert()}
+          onSendReal={(item) => void sendTestAlert(item)}
           onStash={(item) => {
             setPreviewOpen(false);
             openCapture(item.friendId);
