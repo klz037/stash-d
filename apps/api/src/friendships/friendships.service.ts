@@ -89,6 +89,9 @@ export class FriendshipsService {
       pairingCodeDisplay: formatPairingCode(user.pairingCode),
       picture: user.picture,
       isSelf,
+      schoolId: user.schoolId,
+      schoolName: user.schoolName,
+      city: user.city,
     };
   }
 }

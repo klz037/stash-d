@@ -173,7 +173,7 @@ export function Polaroid({
             {canHold && !hereHint ? <p className="hint">Hold to unlock</p> : null}
           </div>
         )}
-        {sealed ? (
+        {sealed && (progress > 0 || busy || (lock.conditionType === 'TOGETHER' && lock.confirmedIds.length > 0)) ? (
           <svg className="ring" viewBox="0 0 100 100">
             <circle
               cx="50"

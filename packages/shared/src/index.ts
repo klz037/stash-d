@@ -43,6 +43,8 @@ export function contextConditionLabel(context: LockContext): string {
 export const MFA_CLAIM = 'https://stashd/mfa';
 /** Error code the API returns when a double-sealed lock is confirmed without it. */
 export const MFA_REQUIRED = 'MFA_REQUIRED';
+/** acr_values the client sends to ask Auth0 for a step-up login. */
+export const MFA_ACR_VALUE = 'http://schemas.openid.net/pape/policies/2007/06/multi-factor';
 
 export interface UserDto {
   id: string;
@@ -69,6 +71,13 @@ export interface FriendDto {
   picture?: string;
   isSelf: boolean;
   online?: boolean;
+  /**
+   * Their school stands in for their location. The client looks up weather,
+   * local time, sunrise and sunset for it. Never a device position.
+   */
+  schoolId?: string;
+  schoolName?: string;
+  city?: string;
 }
 
 export interface LockRecipientDto {

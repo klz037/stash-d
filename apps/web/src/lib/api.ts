@@ -14,6 +14,18 @@ import type {
 } from '@stashd/shared';
 import { apiUrl } from './config';
 
+/** An API failure. `code` is the machine-readable reason when the server gives one, e.g. MFA_REQUIRED. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code?: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function request<T>(
   path: string,
   token: string,
@@ -29,17 +41,22 @@ async function request<T>(
   });
   if (!response.ok) {
     let message = 'Something went wrong.';
+    let code: string | undefined;
     try {
-      const body = (await response.json()) as { message?: string | string[] };
+      const body = (await response.json()) as {
+        message?: string | string[];
+        code?: string;
+      };
       if (Array.isArray(body.message)) {
         message = body.message.join(' ');
       } else if (body.message) {
         message = body.message;
       }
+      code = body.code;
     } catch {
       message = response.statusText;
     }
-    throw new Error(message);
+    throw new ApiError(message, response.status, code);
   }
   if (response.status === 204) {
     return undefined as T;

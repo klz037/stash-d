@@ -70,6 +70,18 @@ Not GPS. A sender can tag a `MANUAL` or `TOGETHER` lock with one of four context
 
 The school in your profile stands in for your location for anything that needs a place (weather, calendar). The device's location is never read.
 
+## Sky
+
+Each friend's school gives us their **sky**: weather, local time, sunrise and sunset. That is the whole notification system. There is no push. When a friend's sky says something worth acting on, a prompt appears on your Stash and lands once as a toast:
+
+- It's raining, snowing or storming on them and not on you → "Take a picture of your sky and send it over."
+- A 20° gap between your campuses.
+- Their sunrise or sunset is within the hour.
+- It's late night for them and at least two hours off from you → "Stash something for when they wake up."
+- It's their morning and you're ahead of them.
+
+The same skies feed **condition suggestions** in capture: "Open when it stops raining" only appears if it is raining on the recipient right now. "Open when the sun comes up (7:12 AM)" carries their sunrise, not yours.
+
 ---
 
 ## Screens

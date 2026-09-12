@@ -40,12 +40,18 @@ export function CaptureSheet({
   friends,
   presetRecipientId,
   token,
+  suggestFor,
+  mfaStepUp,
   onClose,
   onSubmit,
 }: {
   friends: FriendDto[];
   presetRecipientId?: string;
   token: () => Promise<string>;
+  /** Condition lines worked out from the recipients' skies. */
+  suggestFor?: (recipientIds: string[]) => string[];
+  /** Show the "needs a second key" toggle. Off until the tenant supports step-up. */
+  mfaStepUp?: boolean;
   onClose: () => void;
   onSubmit: (input: {
     recipientIds: string[];
@@ -54,6 +60,7 @@ export function CaptureSheet({
     conditionType: ConditionType;
     conditionLabel?: string;
     context?: LockContext | null;
+    requiresMfa?: boolean;
     songTrackId?: string;
   }) => Promise<void>;
 }) {
@@ -67,6 +74,7 @@ export function CaptureSheet({
   const [conditionType, setConditionType] = useState<ConditionType>('MANUAL');
   const [conditionLabel, setConditionLabel] = useState('');
   const [context, setContext] = useState<LockContext | null>(null);
+  const [requiresMfa, setRequiresMfa] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -75,8 +83,8 @@ export function CaptureSheet({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const libraryRef = useRef<HTMLInputElement | null>(null);
-  // The label we filled in from a context chip, so we can replace it (and
-  // only it) when the chip changes.
+  // The label we filled in from a chip, so we can replace it (and only it)
+  // when the chip changes.
   const autoLabel = useRef('');
 
   const recipients = useMemo(
@@ -94,6 +102,10 @@ export function CaptureSheet({
         : recipients.length === 2
           ? `${recipients[0].displayName} and ${recipients[1].displayName}`
           : `${recipients[0].displayName}, ${recipients[1].displayName} +${recipients.length - 2}`;
+  const suggestions = useMemo(
+    () => (suggestFor ? suggestFor(recipientIds) : []),
+    [suggestFor, recipientIds],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -216,17 +228,24 @@ export function CaptureSheet({
     });
   }
 
+  /** Fill the condition from a chip unless the sender wrote their own. */
+  function fillLabel(next: string) {
+    if (!conditionLabel.trim() || conditionLabel === autoLabel.current) {
+      autoLabel.current = next;
+      setConditionLabel(next);
+    }
+  }
+
   function pickContext(next: LockContext | null) {
     setContext(next);
-    if (conditionType !== 'MANUAL') {
-      return;
+    if (conditionType === 'MANUAL') {
+      fillLabel(next ? contextConditionLabel(next) : '');
     }
-    // Fill the condition from the chip unless the sender wrote their own.
-    if (!conditionLabel.trim() || conditionLabel === autoLabel.current) {
-      const filled = next ? contextConditionLabel(next) : '';
-      autoLabel.current = filled;
-      setConditionLabel(filled);
-    }
+  }
+
+  function pickSuggestion(label: string) {
+    autoLabel.current = label;
+    setConditionLabel(label);
   }
 
   function labelFor(type: ConditionType): string | undefined {
@@ -256,6 +275,7 @@ export function CaptureSheet({
         conditionType,
         conditionLabel: labelFor(conditionType),
         context: conditionType === 'RECIPIENT_SET' ? null : context,
+        requiresMfa: mfaStepUp ? requiresMfa : false,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not stash that.');
@@ -266,20 +286,11 @@ export function CaptureSheet({
   return (
     <div className="sheet" role="dialog" aria-modal="true">
       <div className="sheet-card">
-        <button
-          className="btn-ghost"
-          type="button"
-          onClick={() => {
-            stopCamera();
-            onClose();
-          }}
-        >
-          Close
-        </button>
         {step === 'media' ? (
           <>
-            <h2>Capture</h2>
-            <p className="lede">Take a photo, or skip it and just write.</p>
+            <p className="lede" style={{ marginBottom: 6 }}>
+              Take a photo, or skip it and just write.
+            </p>
             <div className="camera-stage">
               {imageUrl ? (
                 <img className="camera-preview" src={imageUrl} alt="" />
@@ -394,6 +405,7 @@ export function CaptureSheet({
                   }}
                 >
                   {friend.isSelf ? 'Just me' : friend.displayName}
+                  {!friend.isSelf && friend.city ? ` · ${friend.city}` : ''}
                   {friend.online ? ' · online' : ''}
                 </button>
               ))}
@@ -445,6 +457,41 @@ export function CaptureSheet({
                   </button>
                 ))}
             </div>
+            {conditionType === 'MANUAL' ? (
+              <label className="field">
+                Condition
+                <input
+                  value={conditionLabel}
+                  onChange={(event) => setConditionLabel(event.target.value)}
+                  placeholder="Open when you land"
+                />
+                {suggestions.length > 0 ? (
+                  <>
+                    <span className="hint">From their sky right now</span>
+                    <div className="chips">
+                      {suggestions.map((label) => (
+                        <button
+                          key={label}
+                          type="button"
+                          className={`chip ${conditionLabel === label ? 'active' : ''}`}
+                          onClick={() => pickSuggestion(label)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                ) : null}
+              </label>
+            ) : (
+              <p className="hint">
+                {conditionType === 'TOGETHER'
+                  ? isGroup
+                    ? 'Everyone holds. It opens on every screen when the last hand lands.'
+                    : 'Both of you hold. It opens on both screens at once.'
+                  : 'They write the condition after it arrives.'}
+              </p>
+            )}
             {conditionType !== 'RECIPIENT_SET' ? (
               <div className="field">
                 <span>Tie it to a moment</span>
@@ -465,24 +512,21 @@ export function CaptureSheet({
                 </p>
               </div>
             ) : null}
-            {conditionType === 'MANUAL' ? (
-              <label className="field">
-                Condition
-                <input
-                  value={conditionLabel}
-                  onChange={(event) => setConditionLabel(event.target.value)}
-                  placeholder="Open when you land"
-                />
+            {mfaStepUp ? (
+              <label className="field toggle">
+                <span>
+                  <input
+                    type="checkbox"
+                    checked={requiresMfa}
+                    onChange={(event) => setRequiresMfa(event.target.checked)}
+                  />{' '}
+                  Needs a second key
+                </span>
+                <span className="hint">
+                  They'll have to pass a second sign-in check before this one opens.
+                </span>
               </label>
-            ) : (
-              <p className="hint">
-                {conditionType === 'TOGETHER'
-                  ? isGroup
-                    ? 'Everyone holds. It opens on every screen when the last hand lands.'
-                    : 'Both of you hold. It opens on both screens at once.'
-                  : 'They write the condition after it arrives.'}
-              </p>
-            )}
+            ) : null}
             <button
               className="btn"
               type="button"
@@ -494,6 +538,16 @@ export function CaptureSheet({
           </>
         ) : null}
         {error ? <p className="error">{error}</p> : null}
+        <button
+          className="btn-ghost sheet-close"
+          type="button"
+          onClick={() => {
+            stopCamera();
+            onClose();
+          }}
+        >
+          Close
+        </button>
       </div>
     </div>
   );

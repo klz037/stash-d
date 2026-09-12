@@ -276,9 +276,18 @@ button {
 }
 
 .ring {
+  /* A fixed-size ring in the middle of the frame, not one that grows with
+     the card. It only renders while a hold is in progress or once someone
+     on a TOGETHER lock has held, so the condition text stays readable. */
   position: absolute;
-  inset: 16px;
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: 124px;
+  height: 124px;
+  transform: translate(-50%, -50%);
   pointer-events: none;
+  opacity: 0.92;
 }
 
 .capture {
@@ -400,13 +409,16 @@ button {
 }
 
 .camera-stage, .camera-stage {
+  /* Capped so the viewfinder, its buttons and Close all fit without scrolling
+     on a phone. object-fit: cover on the preview absorbs the crop. */
   position: relative;
   width: 100%;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 4 / 5;
+  max-height: min(44vh, 360px);
   overflow: hidden;
   border-radius: 18px;
   background: #1c1612;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 
 .camera-preview, .camera-preview {
@@ -428,10 +440,21 @@ button {
 }
 
 .camera-actions, .camera-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 8px;
+}
+
+.camera-actions .btn,
+.camera-actions .btn-ghost {
+  padding: 11px 10px;
+  font-size: 0.9rem;
+}
+
+/* Close lives at the bottom of the sheet, under whatever step is showing. */
+.sheet-close {
+  margin-top: 16px;
 }
 
 .prompt-rail {
@@ -703,4 +726,16 @@ button {
 
 .name-card .field {
   margin-bottom: 4px;
+}
+
+.field.toggle span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field.toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
 }

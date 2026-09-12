@@ -5,6 +5,8 @@ import {
   FriendNoteDto,
   LockContext,
   LockDto,
+  MFA_ACR_VALUE,
+  MFA_REQUIRED,
   PromptDto,
   SOCKET_EVENTS,
   UserDto,
@@ -17,10 +19,14 @@ import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
+import { auth0, mfaStepUp } from '../lib/config';
 import { buildPrompts, dismissPrompt, SCHOOL_OPTIONS, schoolLocation } from '../lib/prompts';
+import { buildSkyPrompts, SkyMap, suggestConditions } from '../lib/sky';
 import { connectRealtime, disconnectRealtime } from '../lib/socket';
-import { fetchWeather, Weather } from '../lib/weather';
+import { describeSky, fetchSky, localClock, Sky } from '../lib/weather';
+
+const NOTIFIED_KEY = 'stashd.skyNotified';
 
 function upsertLock(list: LockDto[], next: LockDto) {
   const index = list.findIndex((item) => item.id === next.id);
@@ -32,14 +38,22 @@ function upsertLock(list: LockDto[], next: LockDto) {
   return copy;
 }
 
+function loadNotified(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+
 export function HomePage() {
-  const { getAccessTokenSilently, logout, user: authUser } = useAuth0();
+  const { getAccessTokenSilently, loginWithRedirect, logout, user: authUser } = useAuth0();
   const [me, setMe] = useState<UserDto | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
   const [notes, setNotes] = useState<FriendNoteDto[]>([]);
-  const [weather, setWeather] = useState<Weather | null>(null);
+  const [skies, setSkies] = useState<SkyMap>({});
   const [showSent, setShowSent] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
@@ -51,6 +65,7 @@ export function HomePage() {
   const [noteFriendId, setNoteFriendId] = useState('');
   const [hereBusy, setHereBusy] = useState<LockContext | null>(null);
   const [promptTick, setPromptTick] = useState(0);
+  const [clockTick, setClockTick] = useState(0);
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
@@ -172,21 +187,45 @@ export function HomePage() {
     return () => window.clearInterval(id);
   }, [inbox, sent]);
 
-  // Weather at the school, never at the device.
+  // Every school on the friend list (and mine) gets a sky: weather, local
+  // time, sunrise, sunset. Refreshed every ten minutes; never the device.
   useEffect(() => {
-    const school = schoolLocation(me?.schoolId);
-    if (!school) {
-      setWeather(null);
-      return;
+    const ids = new Set<string>();
+    if (me?.schoolId) ids.add(me.schoolId);
+    for (const friend of friends) {
+      if (friend.schoolId) ids.add(friend.schoolId);
+    }
+    if (ids.size === 0) {
+      setSkies({});
+      return undefined;
     }
     let active = true;
-    void fetchWeather(school.lat, school.lon).then((result) => {
-      if (active) setWeather(result);
-    });
+    async function load() {
+      const entries = await Promise.all(
+        [...ids].map(async (id) => {
+          const school = schoolLocation(id);
+          if (!school) return [id, undefined] as const;
+          return [id, (await fetchSky(school)) ?? undefined] as const;
+        }),
+      );
+      if (!active) return;
+      const next: SkyMap = {};
+      for (const [id, sky] of entries) next[id] = sky;
+      setSkies(next);
+    }
+    void load();
+    const id = window.setInterval(() => void load(), 10 * 60_000);
     return () => {
       active = false;
+      window.clearInterval(id);
     };
-  }, [me?.schoolId]);
+  }, [me?.schoolId, friends]);
+
+  // Sunrise and "it's 11 PM for Maya" depend on the clock, not on data.
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((value) => value + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   async function confirm(id: string) {
     try {
@@ -194,6 +233,15 @@ export function HomePage() {
       setInbox((current) => upsertLock(current, lock));
       setSent((current) => upsertLock(current, lock));
     } catch (err) {
+      if (err instanceof ApiError && err.code === MFA_REQUIRED) {
+        // The server refused without the MFA claim. Go get a token that has it.
+        toast('This one needs your second key. One sec…');
+        await loginWithRedirect({
+          authorizationParams: { acr_values: MFA_ACR_VALUE, audience: auth0.audience },
+          appState: { returnTo: '/' },
+        });
+        return;
+      }
       toast(err instanceof Error ? err.message : 'Could not unlock.');
     }
   }
@@ -314,12 +362,55 @@ export function HomePage() {
       ),
     [inbox],
   );
+  const mySky: Sky | null = me?.schoolId ? (skies[me.schoolId] ?? null) : null;
+  const skyPrompts = useMemo(() => {
+    if (!me) {
+      return [] as PromptDto[];
+    }
+    return buildSkyPrompts({ me, friends, skies });
+    // clockTick re-runs this every minute so sunrise / late-night prompts appear on time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, friends, skies, promptTick, clockTick]);
   const prompts = useMemo(() => {
     if (!me) {
       return [] as PromptDto[];
     }
-    return buildPrompts({ me, friends, inbox, sent, notes, weather });
-  }, [me, friends, inbox, sent, notes, weather, promptTick]);
+    const weather = mySky ? { tempF: mySky.tempF, label: mySky.label } : null;
+    return [...skyPrompts, ...buildPrompts({ me, friends, inbox, sent, notes, weather })].slice(0, 5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, friends, inbox, sent, notes, mySky, skyPrompts, promptTick]);
+
+  // A sky prompt is the closest thing this app has to a notification: the
+  // first time one appears, it also lands as a toast. Once per trigger.
+  useEffect(() => {
+    if (skyPrompts.length === 0) return;
+    const seen = loadNotified();
+    const fresh = skyPrompts.filter((prompt) => !seen.includes(prompt.triggerKey));
+    if (fresh.length === 0) return;
+    for (const prompt of fresh) {
+      toast(`${prompt.title}. ${prompt.body}`);
+    }
+    try {
+      localStorage.setItem(
+        NOTIFIED_KEY,
+        JSON.stringify([...seen, ...fresh.map((p) => p.triggerKey)].slice(-200)),
+      );
+    } catch {
+      // ignore
+    }
+  }, [skyPrompts, toast]);
+
+  const suggestFor = useCallback(
+    (recipientIds: string[]) => {
+      const recipientSkies = friends
+        .filter((friend) => recipientIds.includes(friend.id) && friend.schoolId)
+        .map((friend) => skies[friend.schoolId as string])
+        .filter((sky): sky is Sky => Boolean(sky));
+      return suggestConditions(recipientSkies);
+    },
+    [friends, skies],
+  );
+
   const school = schoolLocation(me?.schoolId);
   const needsName = Boolean(me && !me.displayNameSet);
 
@@ -372,11 +463,14 @@ export function HomePage() {
             {school ? (
               <span className="hint">
                 {school.city}
-                {weather ? ` · ${weather.tempF}° and ${weather.label}` : ''}
-                {' · '}we use your school as your location, not your phone.
+                {mySky ? ` · ${describeSky(mySky)} · ${localClock(mySky.timezone)}` : ''}
+                {'. '}Your school stands in for your location. No GPS.
               </span>
             ) : (
-              <span className="hint">Your school stands in for your location. No GPS.</span>
+              <span className="hint">
+                Your school stands in for your location, so friends know your weather and your
+                clock. No GPS.
+              </span>
             )}
           </label>
           <label className="field">
@@ -588,6 +682,8 @@ export function HomePage() {
           friends={friends}
           token={token}
           presetRecipientId={replyTo}
+          suggestFor={suggestFor}
+          mfaStepUp={mfaStepUp}
           onClose={() => setCapturing(false)}
           onSubmit={async (input) => {
             const lock = await api.createLock(tokenRef.current || (await token()), input);

@@ -8,6 +8,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "test": "jest",
+    "seed": "node scripts/seed.mjs",
     "lint": "tsc --noEmit -p tsconfig.build.json"
   },
   "dependencies": {

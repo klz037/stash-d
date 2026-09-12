@@ -111,6 +111,19 @@ npm test               # lock-engine unit tests
 
 The JWT guard is on every domain route. `GET /api/me` without a bearer token returns **401**. `GET /api/health` is public so you can confirm Mongo is up.
 
+## Seeding a demo
+
+Each teammate signs in once so their Auth0 user exists, then reads their id from `GET /api/me`. Then:
+
+```bash
+npm run seed -w @stashd/api -- --reset \
+  "auth0|abc123:Maya:cmu" \
+  "google-oauth2|456:Jules:pitt" \
+  "auth0|789:Sam:nyu"
+```
+
+Pairs everyone with everyone, sets their schools (ids from `apps/web/src/data/academic-calendars.json`), and stashes six locks between them: a 1:1, a group TOGETHER to everyone, a coffee-context lock, a "you decide", an already-open one, and a sealed song. The first user is the main sender. `--reset` wipes every lock first.
+
 ## Demo loop
 
 1. Two browsers, two Auth0 users.

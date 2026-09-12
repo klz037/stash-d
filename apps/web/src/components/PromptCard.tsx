@@ -12,7 +12,13 @@ export function PromptCard({
   return (
     <article className="prompt-card">
       <div className="prompt-kicker">
-        {prompt.kind === 'tier0' ? 'from your shelf' : prompt.kind === 'tier05' ? 'you wrote this down' : 'on their calendar'}
+        {prompt.emotion === 'weather'
+          ? 'from their sky'
+          : prompt.kind === 'tier0'
+            ? 'from your shelf'
+            : prompt.kind === 'tier05'
+              ? 'you wrote this down'
+              : 'on their calendar'}
       </div>
       <h3>{prompt.title}</h3>
       <p>{prompt.body}</p>
