@@ -1490,15 +1490,26 @@ button {
 }
 
 .ios-notification .chip {
+  background: rgba(255, 255, 255, 0.14);
   color: #fffdf8;
   border-color: rgba(255, 255, 255, 0.35);
   font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ios-notification .chip:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .ios-notification .chip.active {
   background: #fffdf8;
   color: #1c1612;
   border-color: #fffdf8;
+  box-shadow: none;
+}
+
+.ios-notification .chip.active:hover:not([disabled]) {
+  background: #ffffff;
 }
 
 .preview-actions {
