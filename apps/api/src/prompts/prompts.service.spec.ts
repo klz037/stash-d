@@ -1,30 +1,65 @@
 import * as http from 'node:http';
 import { PromptsService } from './prompts.service';
 
+const openServers = new Set<http.Server>();
+afterEach(async () => {
+  // A failed assertion must not leave a mock server holding jest open.
+  await Promise.all(
+    [...openServers].map(
+      (server) =>
+        new Promise<void>((r) => {
+          server.closeAllConnections?.();
+          server.close(() => r());
+        }),
+    ),
+  );
+  openServers.clear();
+});
+
 /** A stand-in for an OpenAI-compatible K2 Horizon server. */
 function mockIfm(
   handler: (body: any) => { status?: number; json?: unknown; text?: string },
-): Promise<{ url: string; close: () => Promise<void>; requests: any[] }> {
+  options: { models?: string[] | null } = {},
+): Promise<{ url: string; close: () => Promise<void>; requests: any[]; modelCalls: () => number }> {
   const requests: any[] = [];
+  let modelCalls = 0;
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       let raw = '';
       req.on('data', (c) => (raw += c));
       req.on('end', () => {
+        res.setHeader('Content-Type', 'application/json');
+        if (req.method === 'GET' && req.url?.endsWith('/models')) {
+          modelCalls += 1;
+          if (options.models === undefined || options.models === null) {
+            res.statusCode = 404;
+            res.end('{"error":"no such route"}');
+            return;
+          }
+          res.statusCode = 200;
+          res.end(JSON.stringify({ object: 'list', data: options.models.map((id) => ({ id })) }));
+          return;
+        }
         const body = raw ? JSON.parse(raw) : {};
         requests.push({ path: req.url, auth: req.headers.authorization, body });
         const out = handler(body);
         res.statusCode = out.status ?? 200;
-        res.setHeader('Content-Type', 'application/json');
         res.end(out.text ?? JSON.stringify(out.json ?? {}));
       });
     });
+    openServers.add(server);
     server.listen(0, '127.0.0.1', () => {
       const { port } = server.address() as { port: number };
       resolve({
         url: `http://127.0.0.1:${port}/v1`,
         requests,
-        close: () => new Promise((r) => server.close(() => r())),
+        modelCalls: () => modelCalls,
+        close: () =>
+          new Promise((r) => {
+            openServers.delete(server);
+            server.closeAllConnections?.();
+            server.close(() => r());
+          }),
       });
     });
   });
@@ -177,6 +212,80 @@ describe('PromptsService with IFM', () => {
       cacheHits: 0,
       jobs: { alertCopy: 0, curation: 0, shelfCopy: 0 },
     });
+  });
+
+  it('uses the endpoint\u2019s own ID for the K2 model when IFM_MODEL is not served there', async () => {
+    const ok = { json: { choices: [{ message: { content: '{"title":"t","body":"b","cta":"c"}' } }] } };
+
+    // Same weights, different naming: prefer the matching tail.
+    const tail = await mockIfm(() => ok, { models: ['gpt-4o-mini', 'k2-horizon-7b', 'k2-horizon-32b'] });
+    process.env.IFM_API_URL = tail.url;
+    process.env.IFM_API_KEY = 'k';
+    let service = new PromptsService();
+    await service.compose(input);
+    expect(tail.requests[0].body.model).toBe('k2-horizon-7b');
+    expect(service.diagnostics()).toMatchObject({
+      model: 'IFM/K2-Horizon-7B',
+      resolvedModel: 'k2-horizon-7b',
+      availableModels: ['gpt-4o-mini', 'k2-horizon-7b', 'k2-horizon-32b'],
+    });
+    expect(service.diagnostics().modelHint).toContain('IFM_MODEL=k2-horizon-7b');
+    await service.compose({ ...input, cue: 'another' });
+    expect(tail.modelCalls()).toBe(1); // list is cached
+    await tail.close();
+
+    // Only other K2 sizes: take the smallest.
+    const sizes = await mockIfm(() => ok, { models: ['IFM/K2-Horizon-32B', 'IFM/K2-Horizon-3.7B'] });
+    process.env.IFM_API_URL = sizes.url;
+    service = new PromptsService();
+    await service.compose(input);
+    expect(sizes.requests[0].body.model).toBe('IFM/K2-Horizon-3.7B');
+    await sizes.close();
+
+    // No K2 at all: keep IFM_MODEL and say what is there.
+    const none = await mockIfm(() => ({ status: 400, text: '{"error":{"message":"token model is not configured"}}' }), {
+      models: ['llama-3', 'mistral'],
+    });
+    process.env.IFM_API_URL = none.url;
+    service = new PromptsService();
+    const result = await service.compose(input);
+    expect(result.source).toBe('fallback');
+    expect(none.requests[0].body.model).toBe('IFM/K2-Horizon-7B');
+    const diag = service.diagnostics();
+    expect(diag.modelHint).toContain('no K2 model is listed');
+    expect(diag.modelHint).toContain('llama-3');
+    expect(diag.lastError).toContain('model "IFM/K2-Horizon-7B"');
+    await none.close();
+
+    // Endpoint has no /models route: send IFM_MODEL as-is, no hint.
+    const bare = await mockIfm(() => ok);
+    process.env.IFM_API_URL = bare.url;
+    service = new PromptsService();
+    await service.compose(input);
+    expect(bare.requests[0].body.model).toBe('IFM/K2-Horizon-7B');
+    expect(service.diagnostics().availableModels).toBeUndefined();
+    expect(service.diagnostics().modelHint).toBeUndefined();
+    await bare.close();
+  });
+
+  it('drops chat_template_kwargs for gateways that reject unknown fields, and remembers', async () => {
+    const ifm = await mockIfm((body) =>
+      body.chat_template_kwargs
+        ? { status: 400, text: '{"error":{"message":"unknown field chat_template_kwargs"}}' }
+        : { json: { choices: [{ message: { content: '{"title":"Strict ok","body":"b","cta":"c"}' } }] } },
+    );
+    process.env.IFM_API_URL = ifm.url;
+    process.env.IFM_API_KEY = 'k';
+    const service = new PromptsService();
+
+    const first = await service.compose(input);
+    const second = await service.compose({ ...input, cue: 'second cue' });
+    await ifm.close();
+
+    expect(first).toMatchObject({ source: 'ifm', title: 'Strict ok' });
+    expect(second.source).toBe('ifm');
+    expect(ifm.requests.map((r) => Boolean(r.body.chat_template_kwargs))).toEqual([true, false, false]);
+    expect(service.diagnostics().usage).toMatchObject({ callsOk: 2, callsFailed: 0 });
   });
 
   it('curates a batch of headlines in one call and validates the verdicts', async () => {

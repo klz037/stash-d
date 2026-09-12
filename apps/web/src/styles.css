@@ -1605,6 +1605,11 @@ button {
   opacity: 0.85;
 }
 
+.ifm-models {
+  display: block;
+  margin-top: 4px;
+}
+
 .prompt-kicker .prompt-ifm {
   margin-left: 6px;
   color: var(--accent-deep);

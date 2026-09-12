@@ -36,11 +36,13 @@ function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
       </p>
     );
   }
+  const modelLine = <ModelLine ifm={ifm} />;
   if (ifm.lastResult === 'error') {
     return (
       <p className="hint ifm-status error">
         <strong>IFM: last call failed</strong> ({ifm.lastError ?? 'unknown error'}), so these fell
-        back to rules and template words. Model: {ifm.model}.
+        back to rules and template words.
+        {modelLine}
         <UsageLine ifm={ifm} />
       </p>
     );
@@ -48,8 +50,9 @@ function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
   if (ifm.lastResult === 'ok') {
     return (
       <p className="hint ifm-status ok">
-        <strong>IFM: connected.</strong> {ifm.model}
+        <strong>IFM: connected.</strong> {ifm.resolvedModel ?? ifm.model}
         {ifm.lastLatencyMs ? ` · last reply in ${(ifm.lastLatencyMs / 1000).toFixed(1)}s` : ''}
+        {modelLine}
         <UsageLine ifm={ifm} />
       </p>
     );
@@ -57,7 +60,39 @@ function IfmStatus({ ifm }: { ifm: IfmDiagnosticsDto }) {
   return (
     <p className="hint ifm-status">
       <strong>IFM: configured</strong> ({ifm.model}), no call made yet.
+      {modelLine}
     </p>
+  );
+}
+
+/** Which model ID is really being sent, and what the endpoint says it serves. */
+function ModelLine({ ifm }: { ifm: IfmDiagnosticsDto }) {
+  const swapped = ifm.resolvedModel && ifm.resolvedModel !== ifm.model;
+  const list = ifm.availableModels ?? [];
+  const showList = list.length > 0 && (ifm.lastResult === 'error' || swapped);
+  if (!ifm.modelHint && !showList) return null;
+  return (
+    <span className="ifm-models">
+      {ifm.modelHint ? (
+        <>
+          {' '}
+          {ifm.modelHint}
+        </>
+      ) : null}
+      {showList ? (
+        <>
+          {' '}
+          This endpoint serves:{' '}
+          {list.slice(0, 12).map((id, i) => (
+            <span key={id}>
+              {i > 0 ? ', ' : ''}
+              <code>{id}</code>
+            </span>
+          ))}
+          {list.length > 12 ? `, … (${list.length} total)` : ''}.
+        </>
+      ) : null}
+    </span>
   );
 }
 
