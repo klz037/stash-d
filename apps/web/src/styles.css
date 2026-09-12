@@ -49,7 +49,7 @@ button {
 
 .phone {
   width: min(100%, 420px);
-  min-height: calc(100dvh - 32px);
+  height: calc(100dvh - 32px);
   background: linear-gradient(180deg, #f7f0e2 0%, #efe4cc 100%);
   border: 1px solid var(--line);
   border-radius: 28px;
@@ -60,15 +60,32 @@ button {
   flex-direction: column;
 }
 
-.wordmark {
+/* Logo + wordmark, centered at the top of every screen. */
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
   border: 0;
   background: none;
-  padding: 22px 22px 8px;
-  text-align: left;
+  padding: 22px 22px 10px;
+  color: inherit;
+}
+
+.brand img {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(70, 42, 20, 0.18);
+}
+
+.wordmark {
   letter-spacing: 0.08em;
   text-transform: lowercase;
   font-weight: 700;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  line-height: 1;
 }
 
 .wordmark span {
@@ -77,6 +94,7 @@ button {
 
 .pane-track {
   flex: 1;
+  min-height: 0;
   display: flex;
   width: 200%;
   transform: translateX(-50%);
@@ -89,8 +107,9 @@ button {
 
 .pane {
   width: 50%;
-  padding: 8px 20px 108px;
+  padding: 8px 16px 124px;
   overflow: auto;
+  height: 100%;
 }
 
 .lede {
@@ -183,38 +202,69 @@ button {
 }
 
 .feed {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 12px;
+  align-items: start;
 }
+
+.feed > .empty,
+.feed > .hint {
+  grid-column: 1 / -1;
+}
+
+/* --- the polaroid -------------------------------------------------------
+   A real instant print: white card, square photo, thick bottom margin for
+   the handwriting. Sealed prints look undeveloped. Cards sit slightly
+   tilted, alternating, like a pile on a desk. */
 
 .polaroid {
-  background: var(--polaroid);
-  border-radius: 6px 6px 18px 18px;
-  box-shadow: var(--shadow);
-  padding: 14px 14px 20px;
+  --tilt: 0deg;
+  background: #fdfcf8;
+  border-radius: 3px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 14px 30px rgba(70, 42, 20, 0.22),
+    0 2px 4px rgba(70, 42, 20, 0.12);
+  padding: 8px 8px 10px;
   position: relative;
-  overflow: hidden;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transform: rotate(var(--tilt));
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  margin: 4px 2px 6px;
+  min-width: 0;
 }
 
-.polaroid::before {
+.polaroid.holdable:active {
+  transform: rotate(0deg) scale(1.01);
+}
+
+/* A faint paper grain on the card. */
+.polaroid::after {
   content: '';
   position: absolute;
-  inset: 0 auto auto 0;
-  width: 100%;
-  height: 6px;
-  background: var(--accent);
+  inset: 0;
+  border-radius: 3px;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(28, 22, 18, 0.035) 1px, transparent 1px);
+  background-size: 3px 3px;
+  opacity: 0.6;
 }
 
 .frame {
-  min-height: 220px;
+  --develop: 0;
+  aspect-ratio: 1 / 1;
   background: #d9cbb3;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12);
 }
 
 .frame.unlocked {
@@ -223,33 +273,74 @@ button {
 
 .frame img {
   width: 100%;
-  height: 240px;
+  height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.hold-copy {
-  position: relative;
-  z-index: 1;
+/* Undeveloped print: the blue-grey of a fresh instant photo. Holding
+   lightens it a little as the ring fills, like an image coming up. */
+.undeveloped {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 253, 248, calc(0.05 + var(--develop) * 0.35)), transparent 60%),
+    linear-gradient(180deg, #4a5560 0%, #2f3840 100%);
+  color: rgba(243, 234, 216, 0.75);
+}
+
+.undeveloped-hint {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
   text-align: center;
-  padding: 24px;
-  color: #3d342c;
+  padding: 0 24px;
+}
+
+.polaroid.here .undeveloped-hint {
+  color: #ffd9c9;
+  font-weight: 600;
+}
+
+.revealed-text.on-print {
+  color: #f3ead8;
+  padding: 18px;
+  margin: 0;
+  text-align: center;
+}
+
+/* The white margin under the photo: the condition, in marker. */
+.caption {
+  padding: 10px 2px 0;
+  min-height: 58px;
 }
 
 .condition {
   font-family: Caveat, cursive;
-  font-size: 1.65rem;
-  line-height: 1.15;
-  margin: 8px 0 0;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: #1c1612;
+  transform: rotate(-0.6deg);
+  transform-origin: left;
 }
 
 .meta {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: 6px;
   color: var(--ink-soft);
-  font-size: 0.78rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }
 
 .revealed-text {
@@ -258,17 +349,33 @@ button {
   line-height: 1.45;
 }
 
+.ring.ring {
+  width: 84px;
+  height: 84px;
+}
+
 .ring {
+  /* A fixed-size ring in the middle of the frame, not one that grows with
+     the card. It only renders while a hold is in progress or once someone
+     on a TOGETHER lock has held, so the condition text stays readable. */
   position: absolute;
-  inset: 16px;
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: 124px;
+  height: 124px;
+  transform: translate(-50%, -50%);
   pointer-events: none;
+  opacity: 0.92;
 }
 
 .capture {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 18px;
+  bottom: 26px;
+  z-index: 4;
+  pointer-events: none;
   display: flex;
   justify-content: center;
 }
@@ -383,13 +490,16 @@ button {
 }
 
 .camera-stage, .camera-stage {
+  /* Capped so the viewfinder, its buttons and Close all fit without scrolling
+     on a phone. object-fit: cover on the preview absorbs the crop. */
   position: relative;
   width: 100%;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 4 / 5;
+  max-height: min(44vh, 360px);
   overflow: hidden;
   border-radius: 18px;
   background: #1c1612;
-  margin: 12px 0;
+  margin: 8px 0;
 }
 
 .camera-preview, .camera-preview {
@@ -411,10 +521,21 @@ button {
 }
 
 .camera-actions, .camera-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-top: 8px;
+}
+
+.camera-actions .btn,
+.camera-actions .btn-ghost {
+  padding: 11px 10px;
+  font-size: 0.9rem;
+}
+
+/* Close lives at the bottom of the sheet, under whatever step is showing. */
+.sheet-close {
+  margin-top: 16px;
 }
 
 .prompt-rail {
@@ -481,73 +602,6 @@ button {
   margin-top: 10px;
 }
 
-.account .field .btn,
-.account .field .btn-ghost {
-  margin-top: 8px;
-}
-
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.toggle-row span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.toggle-row small {
-  color: var(--ink-soft);
-  font-size: 0.78rem;
-}
-
-.chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0;
-}
-
-.chip {
-  border: 1px solid var(--line);
-  background: transparent;
-  border-radius: 999px;
-  padding: 6px 10px;
-  font: inherit;
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.chip.active {
-  background: var(--ink);
-  color: #fffdf8;
-  border-color: var(--ink);
-}
-
-.group-list {
-  list-style: none;
-  margin: 10px 0 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.group-list li {
-  display: grid;
-  gap: 2px;
-  font-size: 0.84rem;
-}
-
-.group-list span {
-  color: var(--ink-soft);
-}
-
-.choice-meta {
-  color: var(--ink-soft);
-  font-size: 0.82rem;
 /* --- songs -------------------------------------------------------------- */
 
 /* The sealed state for a song: a record sleeve, never the real cover.
@@ -670,6 +724,552 @@ button {
   border-radius: 8px;
   object-fit: cover;
   flex: none;
+}
+
+/* --- groups, context, names ------------------------------------------- */
+
+.intro {
+  text-align: center;
+  padding: 0 6px;
+}
+
+/* One dot per other participant on a TOGETHER lock. Filled once they've held. */
+.holders {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin: 8px 0 2px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(28, 22, 18, 0.35);
+  background: transparent;
+  transition: background 200ms ease;
+}
+
+.dot.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* "I'm here" chips above the feed, and the moment chips in capture. */
+.here-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 16px;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.chip.active {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.chip[disabled] {
+  opacity: 0.5;
+}
+
+/* A card whose condition just came true glows until it's held. */
+.polaroid.here .frame {
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.35);
+}
+
+.here-hint {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+.name-card {
+  margin-top: 4px;
+}
+
+.name-card .field {
+  margin-bottom: 4px;
+}
+
+.field.toggle span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field.toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+/* --- top bar, profile menu, review ------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 8px;
+}
+
+.topbar .wordmark {
+  font-size: 1.05rem;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: var(--ink);
+  color: #fffdf8;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar.small {
+  width: 30px;
+  height: 30px;
+  font-size: 0.8rem;
+}
+
+.menu {
+  position: absolute;
+  top: 62px;
+  right: 14px;
+  width: min(88%, 340px);
+  max-height: 72%;
+  overflow: auto;
+  z-index: 6;
+  background: var(--polaroid);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 14px 14px 16px;
+  font-size: 0.88rem;
+}
+
+.menu h4 {
+  margin: 14px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.menu .field {
+  margin: 8px 0;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.menu-row small {
+  color: var(--ink-soft);
+  display: block;
+}
+
+.menu-row code {
+  letter-spacing: 0.12em;
+  font-size: 0.85rem;
+}
+
+.menu-profile {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.menu-profile strong {
+  display: block;
+}
+
+.menu-profile small {
+  display: block;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+.brand-big {
+  font-size: 3.2rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+  text-align: center;
+  margin: 56px 0 10px;
+  line-height: 1;
+}
+
+.brand-big span {
+  color: var(--accent);
+}
+
+.review-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--polaroid);
+  margin-bottom: 8px;
+}
+
+.review-card strong {
+  display: block;
+}
+
+.review-card small {
+  display: block;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.review-summary {
+  margin: 12px 0 4px;
+}
+
+.section-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 14px 0 6px;
+}
+
+/* --- top bar actions, ☰ menu, feed scope, pane arrows ----------------- */
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.icon-btn.active,
+.avatar.active {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.burger,
+.burger::before,
+.burger::after {
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: var(--ink);
+  border-radius: 2px;
+  position: relative;
+}
+
+.burger::before,
+.burger::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.burger::before {
+  top: -5px;
+}
+
+.burger::after {
+  top: 5px;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  text-align: left;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.menu-item:first-child {
+  border-top: 0;
+}
+
+.menu-count {
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+}
+
+.menu-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: var(--ink);
+  font-size: 0.9rem;
+  flex: 1;
+}
+
+.menu-link small {
+  display: block;
+  color: var(--ink-soft);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 14px;
+}
+
+.pane-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.arrow-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  color: var(--ink-soft);
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0 0 3px;
+  display: grid;
+  place-items: center;
+}
+
+.scope {
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  color: var(--ink);
+  max-width: 60%;
+}
+
+.capture button {
+  pointer-events: auto;
+}
+
+/* Things inside a narrow print. */
+.polaroid .revealed-text {
+  font-size: 0.82rem;
+  margin: 8px 2px 0;
+}
+
+.polaroid .revealed-text.on-print {
+  font-size: 0.8rem;
+  padding: 10px;
+}
+
+.polaroid .btn-ghost,
+.polaroid .btn {
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  margin-top: 6px;
+}
+
+.polaroid .field {
+  margin: 8px 0 0;
+  gap: 6px;
+}
+
+.polaroid .field input {
+  padding: 8px;
+  font-size: 0.85rem;
+}
+
+.polaroid .sleeve {
+  width: 56px;
+  height: 56px;
+  margin: 0 0 4px;
+}
+
+.holders .dot {
+  width: 8px;
+  height: 8px;
+}
+
+/* Behind an open menu: tap anywhere to close it. Sits above the panes, below the menu. */
+.scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: transparent;
+}
+
+.moment-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.moment-input input {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--polaroid);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.moment-input .btn-ghost {
+  width: auto;
+  padding: 10px 14px;
+}
+
+/* --- requests, alerts ------------------------------------------------- */
+
+.icon-btn {
+  position: relative;
+}
+
+.badge-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--polaroid);
+}
+
+.menu-count.pill {
+  background: var(--accent);
+  color: #fffdf8;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 600;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+/* Something that needs an answer: a friend request, a friend opening together. */
+.alert-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: rgba(28, 22, 18, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.alert-card {
+  width: 100%;
+  background: var(--polaroid);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: 22px 18px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.alert-card h3 {
+  margin: 6px 0 0;
+  font-size: 1.1rem;
+}
+
+.alert-card .lede {
+  margin: 0 0 6px;
+}
+
+.alert-card .avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 1.2rem;
+}
+
+/* A card waiting on me right now, while they hold. */
+.polaroid.urgent .frame {
+  box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.55);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 3px rgba(194, 74, 42, 0.55); }
+  50% { box-shadow: inset 0 0 0 1px rgba(28, 22, 18, 0.12), 0 0 0 6px rgba(194, 74, 42, 0.2); }
+}
+
+/* Stash alerts row in profile */
+.alerts-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.alerts-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.alerts-row .btn-ghost {
+  width: auto;
+  padding: 8px 14px;
 }
 
 .hint .link {
@@ -804,4 +1404,11 @@ button {
   background: #fffdf8;
   color: #1c1612;
   border-color: #fffdf8;
+}
+
+.preview-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
 }

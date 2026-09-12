@@ -4,21 +4,23 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { GroupDto, LockDto, SOCKET_EVENTS } from '@stashd/shared';
+import { FriendRequestDto, GroupDto, LockDto, SOCKET_EVENTS } from '@stashd/shared';
 import { decode, verify, JwtHeader, VerifyOptions } from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
 import { Server, Socket } from 'socket.io';
 import { AuthClaims } from '../auth/auth.types';
 import { readAuth0Config } from '../auth/auth0.config';
+import { participants } from '../stashes/lock.engine';
 import { LockDocument } from '../stashes/schemas/lock.schema';
-import { FriendshipsService } from '../friendships/friendships.service';
 import { UsersService } from '../users/users.service';
 
 type AuthedSocket = Socket & { userId?: string };
+
+/** One LockDto per participant id, each shaped for that viewer. */
+type LockViews = Map<string, LockDto>;
 
 @WebSocketGateway({
   maxHttpBufferSize: 5e6,
@@ -37,7 +39,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   constructor(
     config: ConfigService,
     private readonly usersService: UsersService,
-    private readonly friendshipsService: FriendshipsService,
   ) {
     // Same validation as the HTTP strategy — the socket is a token acceptor too,
     // so it must not be able to boot with a weaker check. See auth0.config.ts.
@@ -76,28 +77,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.removePresence(client.userId, client.id);
   }
 
-  
-  @SubscribeMessage('location:report')
-  async onLocationReport(
-    @ConnectedSocket() client: AuthedSocket,
-    body: { coarseLat: number; coarseLon: number; placeLabel?: string },
-  ) {
-    if (!client.userId) return;
-    const user = await this.usersService.findById(client.userId);
-    if (!user || !user.locationSharing) return;
-    const updated = await this.usersService.updateLocation(user, {
-      coarseLat: body.coarseLat,
-      coarseLon: body.coarseLon,
-      placeLabel: body.placeLabel,
-    });
-    const friendIds = await this.friendshipsService.friendIdsOf(client.userId);
-    this.notifyLocation(friendIds, {
-      userId: client.userId,
-      placeLabel: updated.placeLabel,
-      locationUpdatedAt: updated.locationUpdatedAt?.toISOString(),
-    });
-  }
-
   /**
    * Presence is tracked in memory but never broadcast. It is read back only
    * through GET /api/friends, which returns it for people you are paired with.
@@ -108,31 +87,45 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return (this.online.get(userId)?.size ?? 0) > 0;
   }
 
-  notifyLockCreated(senderId: string, recipientId: string, dto: LockDto) {
-    this.toUser(recipientId).emit(SOCKET_EVENTS.lockCreated, dto);
-    if (senderId !== recipientId) {
-      this.toUser(senderId).emit(SOCKET_EVENTS.lockUpdated, dto);
+  /** Recipients hear `lock:created`; a sender who is not also a recipient hears `lock:updated`. */
+  notifyLockCreated(lock: LockDocument, views: LockViews) {
+    for (const id of participants(lock)) {
+      const event = lock.recipientIds.includes(id)
+        ? SOCKET_EVENTS.lockCreated
+        : SOCKET_EVENTS.lockUpdated;
+      this.emitTo(id, event, views.get(id));
     }
   }
 
-  notifyLockUpdated(senderId: string, recipientId: string, dto: LockDto) {
-    this.toUser(senderId).emit(SOCKET_EVENTS.lockUpdated, dto);
-    if (senderId !== recipientId) {
-      this.toUser(recipientId).emit(SOCKET_EVENTS.lockUpdated, dto);
+  notifyLockUpdated(lock: LockDocument, views: LockViews) {
+    for (const id of participants(lock)) {
+      this.emitTo(id, SOCKET_EVENTS.lockUpdated, views.get(id));
     }
   }
 
-  notifyLockChange(lock: LockDocument, forSender: LockDto, forRecipient: LockDto) {
+  /** After a hold: everyone on the lock hears the same state event, shaped for them. */
+  notifyLockChange(lock: LockDocument, views: LockViews) {
     const event =
       lock.state === 'UNLOCKED'
         ? SOCKET_EVENTS.lockUnlocked
         : lock.state === 'READY'
           ? SOCKET_EVENTS.lockReady
           : SOCKET_EVENTS.lockUpdated;
-    this.toUser(lock.senderId).emit(event, forSender);
-    if (lock.senderId !== lock.recipientId) {
-      this.toUser(lock.recipientId).emit(event, forRecipient);
+    for (const id of participants(lock)) {
+      this.emitTo(id, event, views.get(id));
     }
+  }
+
+  /** Every member hears the new roster, so their group list and recipient picker stay current. */
+  notifyGroupUpdated(group: GroupDto) {
+    for (const id of group.memberIds) {
+      this.toUser(id).emit(SOCKET_EVENTS.groupUpdated, group);
+    }
+  }
+
+  /** Someone entered your code. Only you hear it; nothing is shared until you accept. */
+  notifyFriendRequested(toUserId: string, request: FriendRequestDto) {
+    this.toUser(toUserId).emit(SOCKET_EVENTS.friendRequested, request);
   }
 
   notifyPaired(userId: string, friendId: string) {
@@ -140,15 +133,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.toUser(friendId).emit(SOCKET_EVENTS.friendPaired, { friendId: userId });
   }
 
-
-  notifyLocation(friendIds: string[], payload: { userId: string; placeLabel?: string; locationUpdatedAt?: string }) {
-    for (const friendId of friendIds) {
-      this.toUser(friendId).emit(SOCKET_EVENTS.location, payload);
+  private emitTo(userId: string, event: string, dto: LockDto | undefined) {
+    if (!dto) {
+      return;
     }
-  }
-
-  notifyGroupUpdated(userId: string, group: GroupDto) {
-    this.toUser(userId).emit(SOCKET_EVENTS.groupUpdated, group);
+    this.toUser(userId).emit(event, dto);
   }
 
   private toUser(userId: string) {

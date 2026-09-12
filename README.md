@@ -111,6 +111,38 @@ npm test               # lock-engine unit tests
 
 The JWT guard is on every domain route. `GET /api/me` without a bearer token returns **401**. `GET /api/health` is public so you can confirm Mongo is up.
 
+## "Failed to fetch" on a deployed (Vercel) frontend
+
+The web app is static. It has to reach the API over the internet, and the API has to let it. "Failed to fetch" right after sign-in means the browser could not complete the `/api/me` call: either it went to the wrong place or CORS blocked it. Four things, all required:
+
+1. **The API is reachable from the internet.** A Vercel page cannot talk to `localhost:3000` on your laptop. Deploy the API (Render, Railway, Fly all work with `npm run build` then `npm run start:prod`), or expose the laptop with a tunnel for the demo. Note its public URL.
+2. **`VITE_API_URL`** in the Vercel project's environment variables is that URL, no trailing slash. Redeploy after setting it; Vite bakes env vars in at build time.
+3. **`WEB_ORIGIN`** on the API includes the Vercel origin, comma-separated: `http://localhost:5173,https://stash-d.vercel.app`. Every preview URL is its own origin.
+4. **Auth0 SPA settings**: the Vercel URL is in Allowed Callback URLs, Allowed Logout URLs, and Allowed Web Origins. Without this Auth0 refuses the redirect back, which looks like a login that never finishes.
+
+Quick check from the deployed page's devtools console: `fetch('<API URL>/api/health').then(r => r.json())`. If that fails, it's 1 or 3. If it works but sign-in still fails, it's 2 or 4.
+
+## When something says "Internal Server Error"
+
+Check these in order. They account for every 500 we've hit.
+
+1. **Is the API running?** `curl http://127.0.0.1:3000/api/health`. If nothing answers, the Vite proxy returns a bare 500 for every `/api` call and the app shows "Internal Server Error" right after login. `npm run dev` starts both; `nest start --watch` dies silently on a compile error, so look at the api pane.
+2. **Old lock documents.** Locks from before groups have `recipientId` instead of `recipientIds` and are invisible to their recipients. The migration is below. It has been run once on the shared cluster.
+3. **Spotify in development mode.** Spotify answers 403 for any listener whose email isn't under **User Management** on the app in the developer dashboard. The picker now says so instead of showing an empty "recently played". Connecting with a non-listed account is refused with the same message. Add each teammate's Spotify email before the demo.
+
+## Seeding a demo
+
+Each teammate signs in once so their Auth0 user exists, then reads their id from `GET /api/me`. Then:
+
+```bash
+npm run seed -w @stashd/api -- --reset \
+  "auth0|abc123:Maya:cmu" \
+  "google-oauth2|456:Jules:pitt" \
+  "auth0|789:Sam:nyu"
+```
+
+Pairs everyone with everyone, sets their schools (ids from `apps/web/src/data/academic-calendars.json`), and stashes six locks between them: a 1:1, a group TOGETHER to everyone, a coffee-context lock, a "you decide", an already-open one, and a sealed song. The first user is the main sender. `--reset` wipes every lock first.
+
 ## Demo loop
 
 1. Two browsers, two Auth0 users.
@@ -132,9 +164,39 @@ GET    /api/friends          # "Me" first
 POST   /api/pair             # { code }
 GET    /api/locks            # inbox (recipient)
 GET    /api/locks/sent
-POST   /api/locks
+PATCH  /api/me               # { displayName?, schoolId?, ... }
+POST   /api/locks            # { recipientIds: [...], context?, requiresMfa?, ... }
 POST   /api/locks/:id/confirm
 POST   /api/locks/:id/condition
+POST   /api/locks/here       # { context } — "I'm here"
+```
+
+A lock can go to up to eight paired people. `TOGETHER` then means everyone holds and the last hold opens every screen. `MANUAL` means any one recipient's hold opens it for all. `RECIPIENT_SET` is one person only.
+
+A `context` (`coffee`, `walking-home`, `studying`, `home`) on a lock is a condition the app can recognise. When a recipient taps "I'm here" with the matching context, the lock's `contextMetAt` is stamped and everyone on it hears `lock:updated`. It does not change state. The hold is still the unlock.
+
+```
+GET    /api/groups
+POST   /api/groups           # { name, memberIds? } → invite code
+POST   /api/groups/join      # { code }
+GET    /api/calendar         # your next two weeks, via Auth0 Token Vault → Google
+```
+
+Groups are pairing, N-way: a name, an invite code, a member list. Being in a group with someone lets you stash to them. Picking a group in capture fills in the lock's recipients; locks never reference the group itself.
+
+The calendar route is the Auth0 story: the API exchanges the user's own access token for their Google token through Token Vault and reads the primary calendar. No Google credential is stored here or shown to the browser. Setup lives in [`auth0/README.md`](./auth0/README.md); without it the route reports `available: false` and nothing else changes.
+
+Existing local data from before groups: `db.locks.drop()` is fine, it's demo data. To keep it instead:
+
+```js
+db.locks.updateMany({ recipientId: { $exists: true } }, [
+  { $set: {
+      recipientIds: ['$recipientId'],
+      confirmedIds: { $concatArrays: [
+        { $cond: ['$senderConfirmed', ['$senderId'], []] },
+        { $cond: ['$recipientConfirmed', ['$recipientId'], []] } ] } } },
+  { $unset: ['recipientId', 'senderConfirmed', 'recipientConfirmed'] }
+])
 ```
 
 Socket.IO (same origin / proxied) authenticates the access token on connect:

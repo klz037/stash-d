@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Post,
   Query,
@@ -66,9 +67,11 @@ export class SpotifyController {
     try {
       await this.spotify.completeConnectByState(code, state);
       res.redirect(back('connected'));
-    } catch {
-      // Never leak the reason into a URL a stranger could have triggered.
-      res.redirect(back('error'));
+    } catch (error) {
+      // Never leak details into a URL a stranger could have triggered. The one
+      // distinction worth making: Spotify refused the listener (development
+      // mode allow list), which the person can actually fix.
+      res.redirect(back(error instanceof ForbiddenException ? 'notallowed' : 'error'));
     }
   }
 

@@ -1,11 +1,35 @@
 import {
+  BadGatewayException,
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SongDto, SPOTIFY_SCOPES, SpotifyNowPlayingDto } from '@stashd/shared';
+import {
+  SongDto,
+  SPOTIFY_NOT_ALLOWED,
+  SPOTIFY_SCOPES,
+  SpotifyNowPlayingDto,
+} from '@stashd/shared';
+
+/**
+ * fetch() throws a bare TypeError when the network is down or DNS fails.
+ * Left alone that surfaces as a 500 "Internal server error" with no hint.
+ * This turns it into a 502 with a sentence a person can act on.
+ */
+async function reach(url: string | URL, init?: RequestInit): Promise<Response> {
+  try {
+    // globalThis.fetch on purpose: this is the one real network call in the
+    // file, and a search-and-replace once turned it into a call to itself.
+    return await globalThis.fetch(url, init);
+  } catch (error) {
+    throw new BadGatewayException(
+      `Could not reach Spotify (${(error as Error).message}). Check the connection and try again.`,
+    );
+  }
+}
 import { randomBytes } from 'node:crypto';
 import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
@@ -131,10 +155,18 @@ export class SpotifyService {
       );
     }
 
-    const profile = await this.getJson<{ id?: string; display_name?: string }>(
-      `${API}/me`,
-      token.access_token,
-    ).catch(() => ({}) as { id?: string; display_name?: string });
+    // Spotify in development mode answers 403 for any listener not on the
+    // app's allow list. Refuse the connect here with a real reason rather than
+    // storing tokens that will fail on every later call.
+    const profileRes = await reach(`${API}/me`, {
+      headers: { Authorization: `Bearer ${token.access_token}` },
+    });
+    if (profileRes.status === 403) {
+      throw new ForbiddenException(SPOTIFY_NOT_ALLOWED);
+    }
+    const profile = profileRes.ok
+      ? ((await profileRes.json()) as { id?: string; display_name?: string })
+      : {};
 
     await this.usersService.setSpotifyTokens(user, {
       accessToken: token.access_token,
@@ -161,32 +193,45 @@ export class SpotifyService {
     ]);
 
     // Don't repeat the current track at the top of the recent list.
-    const deduped = recent.filter((song) => song.trackId !== current?.trackId);
-    return { current, recent: deduped.slice(0, 12) };
+    const deduped = recent.songs.filter((song) => song.trackId !== current.song?.trackId);
+    // A 403 on either endpoint means Spotify won't serve this listener at
+    // all. Say so instead of showing an empty list that looks like "no music".
+    const reason =
+      current.status === 403 || recent.status === 403
+        ? SPOTIFY_NOT_ALLOWED
+        : recent.status && recent.status !== 200
+          ? `Spotify answered ${recent.status} for recently played.`
+          : undefined;
+    return { current: current.song, recent: deduped.slice(0, 12), reason };
   }
 
-  private async currentlyPlaying(accessToken: string): Promise<SongDto | null> {
-    const response = await fetch(`${API}/me/player/currently-playing`, {
+  private async currentlyPlaying(
+    accessToken: string,
+  ): Promise<{ song: SongDto | null; status: number }> {
+    const response = await reach(`${API}/me/player/currently-playing`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     // 204 = nothing playing. Perfectly normal, not an error.
     if (response.status === 204 || response.status === 404) {
-      return null;
+      return { song: null, status: 204 };
     }
     if (!response.ok) {
       this.logger.debug(`currently-playing returned ${response.status}`);
-      return null;
+      return { song: null, status: response.status };
     }
     const body = (await response.json()) as { item?: SpotifyTrack | null };
-    return body.item ? this.toSong(body.item) : null;
+    return { song: body.item ? this.toSong(body.item) : null, status: 200 };
   }
 
-  private async recentlyPlayed(accessToken: string): Promise<SongDto[]> {
-    const response = await fetch(`${API}/me/player/recently-played?limit=20`, {
+  private async recentlyPlayed(
+    accessToken: string,
+  ): Promise<{ songs: SongDto[]; status: number }> {
+    const response = await reach(`${API}/me/player/recently-played?limit=20`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
-      return [];
+      this.logger.debug(`recently-played returned ${response.status}`);
+      return { songs: [], status: response.status };
     }
     const body = (await response.json()) as {
       items?: Array<{ track?: SpotifyTrack }>;
@@ -200,7 +245,7 @@ export class SpotifyService {
       seen.add(item.track.id);
       songs.push(this.toSong(item.track));
     }
-    return songs;
+    return { songs, status: 200 };
   }
 
   // --- resolving a specific track -----------------------------------------
@@ -289,7 +334,7 @@ export class SpotifyService {
       `${config.clientId}:${config.clientSecret}`,
     ).toString('base64');
 
-    const response = await fetch(`${ACCOUNTS}/api/token`, {
+    const response = await reach(`${ACCOUNTS}/api/token`, {
       method: 'POST',
       headers: {
         Authorization: `Basic ${basic}`,
@@ -313,7 +358,7 @@ export class SpotifyService {
   }
 
   private async getJson<T>(url: string, accessToken: string): Promise<T> {
-    const response = await fetch(url, {
+    const response = await reach(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {

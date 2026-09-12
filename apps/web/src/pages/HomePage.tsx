@@ -1,7 +1,8 @@
 import {
   AlertPreviewDto,
+  CalendarDto,
   FriendDto,
-  FriendNoteDto,
+  FriendRequestDto,
   GroupDto,
   LockDto,
   NotificationsStatusDto,
@@ -12,28 +13,70 @@ import {
 import { useAuth0 } from '@auth0/auth0-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertPreview } from '../components/AlertPreview';
-import { CaptureSheet } from '../components/CaptureSheet';
+import { CaptureSheet, Person } from '../components/CaptureSheet';
 import { PairingCodeInput } from '../components/PairingCodeInput';
 import { Polaroid } from '../components/Polaroid';
 import { PromptCard } from '../components/PromptCard';
 import { ToastStack } from '../components/ToastStack';
 import { api } from '../lib/api';
-import { fetchSchoolWeather, watchCoarseLocation } from '../lib/location';
 import {
   disableStashAlerts,
   enableStashAlerts,
   pushSupported,
   showLocalAlert,
 } from '../lib/notifications';
-import { buildPrompts, dismissPrompt, schoolById, SCHOOL_OPTIONS } from '../lib/prompts';
-import { connectRealtime, disconnectRealtime, getRealtime } from '../lib/socket';
+import {
+  buildPrompts,
+  campusFor,
+  dismissPrompt,
+  SCHOOL_OPTIONS,
+  schoolEventsFor,
+  schoolLocation,
+} from '../lib/prompts';
+import { buildSkyPrompts, SkyMap } from '../lib/sky';
+import { connectRealtime, disconnectRealtime } from '../lib/socket';
+import { describeSky, fetchSky, localClock, Sky } from '../lib/weather';
+
+const NOTIFIED_KEY = 'stashd.skyNotified';
+
+type Menu = 'none' | 'more' | 'profile';
+type MoreView = 'root' | 'friend' | 'requests' | 'create' | 'join' | 'created' | 'list';
+type Scope =
+  | { kind: 'all' }
+  | { kind: 'group'; id: string }
+  | { kind: 'pair'; id: string }
+  | { kind: 'moment'; id: string };
+
+/**
+ * Something that needs a person's answer right now: a friend request, or a
+ * friend opening an "open together". Shown one at a time as a sheet, and
+ * counted on the red dot by the ☰ menu.
+ */
+type Alert =
+  | { kind: 'request'; id: string; request: FriendRequestDto }
+  | { kind: 'opening'; id: string; lock: LockDto }
+  | { kind: 'openedAlone'; id: string; lock: LockDto };
 
 function upsertLock(list: LockDto[], next: LockDto) {
   const index = list.findIndex((item) => item.id === next.id);
-  if (index === -1) return [next, ...list];
+  if (index === -1) {
+    return [next, ...list];
+  }
   const copy = [...list];
   copy[index] = next;
   return copy;
+}
+
+function loadNotified(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(NOTIFIED_KEY) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
+}
+
+function initial(name: string) {
+  return (name.trim()[0] ?? '?').toUpperCase();
 }
 
 export function HomePage() {
@@ -41,26 +84,30 @@ export function HomePage() {
   const [me, setMe] = useState<UserDto | null>(null);
   const [friends, setFriends] = useState<FriendDto[]>([]);
   const [groups, setGroups] = useState<GroupDto[]>([]);
+  const [requests, setRequests] = useState<FriendRequestDto[]>([]);
   const [inbox, setInbox] = useState<LockDto[]>([]);
   const [sent, setSent] = useState<LockDto[]>([]);
-  const [notes, setNotes] = useState<FriendNoteDto[]>([]);
+  const [calendar, setCalendar] = useState<CalendarDto | null>(null);
+  const [skies, setSkies] = useState<SkyMap>({});
   const [showSent, setShowSent] = useState(false);
+  const [scope, setScope] = useState<Scope>({ kind: 'all' });
   const [capturing, setCapturing] = useState(false);
   const [replyTo, setReplyTo] = useState<string>();
-  const [presetCondition, setPresetCondition] = useState<string>();
+  const [replyToLockId, setReplyToLockId] = useState<string>();
   const [pairError, setPairError] = useState('');
   const [toasts, setToasts] = useState<Array<{ id: number; text: string }>>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [noteDraft, setNoteDraft] = useState('');
-  const [noteFriendId, setNoteFriendId] = useState('');
-  const [displayNameDraft, setDisplayNameDraft] = useState('');
-  const [groupNameDraft, setGroupNameDraft] = useState('');
-  const [groupCodeDraft, setGroupCodeDraft] = useState('');
-  const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
-  const [weatherBySchool, setWeatherBySchool] = useState<
-    Record<string, { tempF: number; label: string }>
-  >({});
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [menu, setMenu] = useState<Menu>('none');
+  const [moreView, setMoreView] = useState<MoreView>('root');
+  const [nameDraft, setNameDraft] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groupCode, setGroupCode] = useState('');
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [createdGroup, setCreatedGroup] = useState<GroupDto | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [hereBusy, setHereBusy] = useState<string | null>(null);
   const [promptTick, setPromptTick] = useState(0);
+  const [clockTick, setClockTick] = useState(0);
   const [alertStatus, setAlertStatus] = useState<NotificationsStatusDto | null>(null);
   const [alertBusy, setAlertBusy] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -69,6 +116,10 @@ export function HomePage() {
   const tokenRef = useRef('');
   const touchStart = useRef<number | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+  const sentRef = useRef<LockDto[]>([]);
+  const inboxRef = useRef<LockDto[]>([]);
+  sentRef.current = sent;
+  inboxRef.current = inbox;
 
   const toast = useCallback((text: string) => {
     const id = Date.now() + Math.random();
@@ -78,11 +129,52 @@ export function HomePage() {
     }, 3200);
   }, []);
 
+  const pushAlert = useCallback((alert: Alert) => {
+    setAlerts((current) => (current.some((a) => a.id === alert.id) ? current : [...current, alert]));
+  }, []);
+  const dropAlert = useCallback((id: string) => {
+    setAlerts((current) => current.filter((a) => a.id !== id));
+  }, []);
+
+  const copy = useCallback(
+    async (key: string, text: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(key);
+        toast('✓ Copied');
+        window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1600);
+      } catch {
+        toast('Could not copy. Long-press to select it instead.');
+      }
+    },
+    [toast],
+  );
+
   const token = useCallback(async () => {
     const value = await getAccessTokenSilently();
     tokenRef.current = value;
     return value;
   }, [getAccessTokenSilently]);
+
+  const loadGroups = useCallback(async () => {
+    try {
+      setGroups(await api.groups(tokenRef.current || (await token())));
+    } catch {
+      setGroups([]);
+    }
+  }, [token]);
+
+  const loadRequests = useCallback(async () => {
+    try {
+      const list = await api.friendRequests(tokenRef.current || (await token()));
+      setRequests(list);
+      for (const request of list) {
+        pushAlert({ kind: 'request', id: `request-${request.from.id}`, request });
+      }
+    } catch {
+      setRequests([]);
+    }
+  }, [token, pushAlert]);
 
   const refresh = useCallback(async () => {
     const access = await token();
@@ -93,21 +185,16 @@ export function HomePage() {
       api.sent(access),
     ]);
     setMe(profile);
-    setDisplayNameDraft(profile.displayName);
     setFriends(friendList);
     setInbox(incoming);
     setSent(outgoing);
+    await Promise.all([loadGroups(), loadRequests()]);
     try {
-      setNotes(await api.notes(access));
+      setCalendar(await api.calendar(access));
     } catch {
-      setNotes([]);
+      setCalendar(null);
     }
-    try {
-      setGroups(await api.groups(access));
-    } catch {
-      setGroups([]);
-    }
-  }, [token]);
+  }, [token, loadGroups, loadRequests]);
 
   refreshRef.current = refresh;
 
@@ -122,120 +209,185 @@ export function HomePage() {
     void token().then((access) => {
       if (!active) return;
       const socket = connectRealtime(access);
+
       const onConnect = () => {
         void refreshRef.current();
       };
       socket.on('connect', onConnect);
-      if (socket.connected) onConnect();
+      if (socket.connected) {
+        onConnect();
+      }
+
+      const isPairTogether = (lock: LockDto) =>
+        lock.conditionType === 'TOGETHER' && lock.participantIds.length === 2 && !lock.replyToId;
 
       socket.on(SOCKET_EVENTS.lockCreated, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         toast(
-          lock.groupName
-            ? `${lock.senderName} stashed something for ${lock.groupName}.`
-            : `${lock.senderName} stashed something for you.`,
+          lock.replyToId
+            ? `${lock.senderName} stashed back. Hold theirs to start opening.`
+            : lock.recipients.length > 1
+              ? `${lock.senderName} stashed something for ${lock.recipients.length} of you.`
+              : `${lock.senderName} stashed something for you.`,
         );
       });
       socket.on(SOCKET_EVENTS.lockReady, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
-        toast("They're holding with you.");
+        if (isPairTogether(lock)) {
+          // The DTO is shaped for me: senderName is "You" when I started it.
+          // Otherwise they just started, and this is the notification to open from.
+          if (lock.senderName !== 'You') {
+            pushAlert({ kind: 'opening', id: `opening-${lock.id}`, lock });
+          }
+        } else {
+          const left = lock.participantIds.length - lock.confirmedIds.length;
+          toast(
+            lock.participantIds.length > 2
+              ? `${lock.confirmedIds.length} holding. ${left} to go.`
+              : "They're holding with you.",
+          );
+        }
         void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUnlocked, (lock: LockDto) => {
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
+        dropAlert(`opening-${lock.id}`);
         toast(lock.contentHidden ? 'A lock just opened.' : 'Unlocked.');
         void refreshRef.current();
       });
       socket.on(SOCKET_EVENTS.lockUpdated, (lock: LockDto) => {
+        const before =
+          sentRef.current.find((item) => item.id === lock.id) ??
+          inboxRef.current.find((item) => item.id === lock.id);
         setInbox((current) => upsertLock(current, lock));
         setSent((current) => upsertLock(current, lock));
+        if (lock.contextMetAt && !before?.contextMetAt && lock.context && lock.contextMetByName) {
+          toast(`${lock.contextMetByName} is ${lock.context}. Your lock is ready to open.`);
+        }
+        if (lock.replyId && !before?.replyId && lock.senderName === 'You') {
+          toast(`${lock.recipientName} stashed back. Hold to start opening.`);
+        }
+        if (lock.openedAlone && !before?.openedAlone && lock.senderName !== 'You') {
+          dropAlert(`opening-${lock.id}`);
+          pushAlert({ kind: 'openedAlone', id: `alone-${lock.id}`, lock });
+        }
+      });
+      socket.on(SOCKET_EVENTS.friendRequested, (request: FriendRequestDto) => {
+        setRequests((current) =>
+          current.some((r) => r.from.id === request.from.id) ? current : [request, ...current],
+        );
+        pushAlert({ kind: 'request', id: `request-${request.from.id}`, request });
       });
       socket.on(SOCKET_EVENTS.friendPaired, () => {
         void refreshRef.current();
         toast('You are paired.');
       });
-      socket.on(
-        SOCKET_EVENTS.location,
-        (payload: { userId: string; placeLabel?: string; locationUpdatedAt?: string }) => {
-          setFriends((current) =>
-            current.map((friend) =>
-              friend.id === payload.userId
-                ? {
-                    ...friend,
-                    placeLabel: payload.placeLabel,
-                    locationUpdatedAt: payload.locationUpdatedAt,
-                  }
-                : friend,
-            ),
-          );
-          setPromptTick((value) => value + 1);
-        },
-      );
-      socket.on(SOCKET_EVENTS.groupUpdated, () => {
-        void refreshRef.current();
+      socket.on(SOCKET_EVENTS.groupUpdated, (group: GroupDto) => {
+        setGroups((current) => {
+          const index = current.findIndex((item) => item.id === group.id);
+          if (index === -1) return [group, ...current];
+          const copy = [...current];
+          copy[index] = group;
+          return copy;
+        });
       });
     });
     return () => {
       active = false;
       disconnectRealtime();
     };
-  }, [toast, token]);
+  }, [toast, token, pushAlert, dropAlert]);
 
   useEffect(() => {
     const needsPoll = [...inbox, ...sent].some((lock) => lock.state === 'READY');
-    if (!needsPoll) return undefined;
+    if (!needsPoll) {
+      return undefined;
+    }
     const id = window.setInterval(() => {
       void refreshRef.current();
     }, 1000);
     return () => window.clearInterval(id);
   }, [inbox, sent]);
 
-  useEffect(() => {
-    if (!me?.locationSharing) return undefined;
-    return watchCoarseLocation(
-      (place) => {
-        const access = tokenRef.current;
-        if (!access) return;
-        void api.updateLocation(access, place).catch(() => undefined);
-        getRealtime()?.emit('location:report', place);
-      },
-      (message) => toast(message),
-    );
-  }, [me?.locationSharing, toast]);
+  const people = useMemo(() => {
+    const map: Record<string, Person> = {};
+    for (const friend of friends) {
+      map[friend.id] = {
+        id: friend.id,
+        displayName: friend.isSelf ? (me?.displayName ?? 'Me') : friend.displayName,
+        isSelf: friend.isSelf,
+        schoolId: friend.schoolId,
+        schoolName: friend.schoolName,
+        city: friend.city,
+        picture: friend.picture,
+      };
+    }
+    for (const group of groups) {
+      for (const member of group.members) {
+        if (!map[member.id]) {
+          map[member.id] = {
+            id: member.id,
+            displayName: member.displayName,
+            isSelf: member.id === me?.id,
+            schoolId: member.schoolId,
+            schoolName: member.schoolName,
+            city: member.city,
+          };
+        }
+      }
+    }
+    return map;
+  }, [friends, groups, me]);
 
   useEffect(() => {
-    const schoolIds = new Set<string>();
-    for (const friend of friends) {
-      if (!friend.isSelf && friend.schoolId) schoolIds.add(friend.schoolId);
+    const ids = new Set<string>();
+    if (me?.schoolId) ids.add(me.schoolId);
+    for (const person of Object.values(people)) {
+      if (person.schoolId) ids.add(person.schoolId);
     }
-    if (me?.schoolId) schoolIds.add(me.schoolId);
-    let cancelled = false;
-    void (async () => {
-      const next: Record<string, { tempF: number; label: string }> = {};
-      await Promise.all(
-        [...schoolIds].map(async (id) => {
-          const school = schoolById(id);
-          if (!school) return;
-          const weather = await fetchSchoolWeather(school.lat, school.lon);
-          if (weather) next[id] = weather;
+    if (ids.size === 0) {
+      setSkies({});
+      return undefined;
+    }
+    let active = true;
+    async function load() {
+      const entries = await Promise.all(
+        [...ids].map(async (id) => {
+          const school = schoolLocation(id);
+          if (!school) return [id, undefined] as const;
+          return [id, (await fetchSky(school)) ?? undefined] as const;
         }),
       );
-      if (!cancelled) {
-        setWeatherBySchool(next);
-        setPromptTick((value) => value + 1);
-      }
-    })();
+      if (!active) return;
+      const next: SkyMap = {};
+      for (const [id, sky] of entries) next[id] = sky;
+      setSkies(next);
+    }
+    void load();
+    const id = window.setInterval(() => void load(), 10 * 60_000);
     return () => {
-      cancelled = true;
+      active = false;
+      window.clearInterval(id);
     };
-  }, [friends, me?.schoolId]);
+  }, [me?.schoolId, people]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTick((value) => value + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   async function confirm(id: string) {
-    const lock = await api.confirm(tokenRef.current || (await token()), id);
-    setInbox((current) => upsertLock(current, lock));
-    setSent((current) => upsertLock(current, lock));
+    try {
+      const lock = await api.confirm(tokenRef.current || (await token()), id);
+      setInbox((current) => upsertLock(current, lock));
+      setSent((current) => upsertLock(current, lock));
+      dropAlert(`opening-${id}`);
+      dropAlert(`alone-${id}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not unlock.');
+    }
   }
 
   async function setCondition(id: string, conditionLabel: string) {
@@ -247,9 +399,29 @@ export function HomePage() {
     setInbox((current) => upsertLock(current, lock));
   }
 
+  async function saveName() {
+    const name = nameDraft.trim();
+    if (!name) {
+      return;
+    }
+    try {
+      const profile = await api.updateProfile(tokenRef.current || (await token()), {
+        displayName: name,
+      });
+      setMe(profile);
+      setNameDraft('');
+      toast(`Friends will see you as ${profile.displayName}.`);
+      await refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not save your name.');
+    }
+  }
+
   async function saveSchool(schoolId: string) {
     const school = SCHOOL_OPTIONS.find((item) => item.id === schoolId);
-    if (!school) return;
+    if (!school) {
+      return;
+    }
     const profile = await api.updateProfile(tokenRef.current || (await token()), {
       schoolId: school.id,
       schoolName: school.name,
@@ -260,21 +432,117 @@ export function HomePage() {
     setPromptTick((value) => value + 1);
   }
 
-  async function saveDisplayName() {
-    const name = displayNameDraft.trim();
-    if (!name) return;
-    const profile = await api.updateProfile(tokenRef.current || (await token()), {
-      displayName: name,
-    });
-    setMe(profile);
-    setDisplayNameDraft(profile.displayName);
-    toast('Name updated — friends see this.');
+  async function pair(code: string) {
+    try {
+      setPairError('');
+      const friend = await api.pair(tokenRef.current || (await token()), code);
+      if (friend.pending) {
+        toast(`Request sent to ${friend.displayName}. They'll see it next time they open stash'd.`);
+      } else {
+        toast(`Paired with ${friend.displayName}.`);
+        await refresh();
+      }
+      setMenu('none');
+    } catch (err) {
+      setPairError(err instanceof Error ? err.message : 'Could not pair.');
+    }
   }
+
+  async function answerRequest(request: FriendRequestDto, accept: boolean) {
+    try {
+      const access = tokenRef.current || (await token());
+      if (accept) {
+        await api.acceptRequest(access, request.from.id);
+        toast(`You and ${request.from.displayName} are paired.`);
+      } else {
+        await api.declineRequest(access, request.from.id);
+      }
+      setRequests((current) => current.filter((r) => r.from.id !== request.from.id));
+      dropAlert(`request-${request.from.id}`);
+      if (accept) await refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not answer that.');
+    }
+  }
+
+  async function createGroup() {
+    const name = groupName.trim();
+    if (!name) return;
+    setGroupBusy(true);
+    try {
+      const group = await api.createGroup(tokenRef.current || (await token()), {
+        name,
+        memberIds: friends.filter((friend) => !friend.isSelf).map((friend) => friend.id),
+      });
+      setGroupName('');
+      setCreatedGroup(group);
+      setMoreView('created');
+      await loadGroups();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not create the group.');
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  async function joinGroup() {
+    const code = groupCode.trim();
+    if (!code) return;
+    setGroupBusy(true);
+    try {
+      const group = await api.joinGroup(tokenRef.current || (await token()), code);
+      setGroupCode('');
+      await loadGroups();
+      toast(`You're in ${group.name}.`);
+      setScope({ kind: 'group', id: group.id });
+      setMenu('none');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not join.');
+    } finally {
+      setGroupBusy(false);
+    }
+  }
+
+  async function here(moment: string) {
+    setHereBusy(moment);
+    try {
+      const result = await api.here(tokenRef.current || (await token()), moment);
+      for (const lock of result.matched) {
+        setInbox((current) => upsertLock(current, lock));
+      }
+      if (result.matched.length === 0) {
+        toast(`Nothing here is waiting for ${moment}.`);
+      } else {
+        const senders = [...new Set(result.matched.map((lock) => lock.senderName))];
+        toast(
+          `Told ${senders.join(' and ')}. Hold ${
+            result.matched.length === 1 ? 'the card' : 'the cards'
+          } when you're ready.`,
+        );
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Could not check in.');
+    } finally {
+      setHereBusy(null);
+    }
+  }
+
+  function openMenu(next: Menu) {
+    setMenu((current) => (current === next ? 'none' : next));
+    setMoreView('root');
+  }
+
+  function openCapture(recipientId?: string, lockId?: string) {
+    setReplyTo(recipientId);
+    setReplyToLockId(lockId);
+    setCapturing(true);
+  }
+
+  // ---- Device stash alerts (OS pop-ups; the shelf above stays silent) ----
 
   const loadAlertStatus = useCallback(async () => {
     try {
-      const status = await api.notificationsStatus(tokenRef.current || (await token()));
-      setAlertStatus(status);
+      setAlertStatus(await api.notificationsStatus(tokenRef.current || (await token())));
     } catch {
       setAlertStatus(null);
     }
@@ -314,8 +582,7 @@ export function HomePage() {
   const loadPreview = useCallback(async () => {
     setPreviewLoading(true);
     try {
-      const access = tokenRef.current || (await token());
-      setPreview(await api.previewAlerts(access));
+      setPreview(await api.previewAlerts(tokenRef.current || (await token())));
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Could not build a preview.');
     } finally {
@@ -325,33 +592,23 @@ export function HomePage() {
 
   function openPreview() {
     setPreviewOpen(true);
-    setMenuOpen(false);
+    setMenu('none');
     void loadPreview();
   }
-
-  // ?preview=alerts opens the lock-screen preview straight away — handy for demos.
-  useEffect(() => {
-    if (!me) return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('preview') !== 'alerts') return;
-    setPreviewOpen(true);
-    void loadPreview();
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }, [me?.id, loadPreview]);
 
   async function sendTestAlert() {
     if (alertBusy) return;
     setAlertBusy(true);
     try {
       const access = tokenRef.current || (await token());
-      const alert = await api.sendAlertNow(access);
-      if (!alert) {
+      const sentAlert = await api.sendAlertNow(access);
+      if (!sentAlert) {
         toast('Budget spent for today, or no friend has a school set.');
       } else {
         if (!alertStatus?.pushConfigured) {
-          await showLocalAlert(alert);
+          await showLocalAlert(sentAlert);
         }
-        toast(`Sent: ${alert.title}`);
+        toast(`Sent: ${sentAlert.title}`);
       }
       await loadAlertStatus();
     } catch (err) {
@@ -361,74 +618,35 @@ export function HomePage() {
     }
   }
 
-  async function toggleLocationSharing() {
-    const next = !me?.locationSharing;
-    const profile = await api.updateProfile(tokenRef.current || (await token()), {
-      locationSharing: next,
-    });
-    setMe(profile);
-    toast(next ? 'Friends can see coarse place vibes.' : 'Location sharing off.');
-  }
-
-  async function saveNote() {
-    if (!noteFriendId || !noteDraft.trim()) return;
-    await api.createNote(tokenRef.current || (await token()), {
-      friendId: noteFriendId,
-      text: noteDraft.trim(),
-    });
-    setNoteDraft('');
-    toast('Saved to your notebook.');
-    setPromptTick((value) => value + 1);
-    await refresh();
-  }
-
-  async function createGroup() {
-    const name = groupNameDraft.trim();
-    if (!name) return;
-    const group = await api.createGroup(tokenRef.current || (await token()), {
-      name,
-      memberIds: groupMemberIds,
-    });
-    setGroups((current) => [group, ...current.filter((item) => item.id !== group.id)]);
-    setGroupNameDraft('');
-    setGroupMemberIds([]);
-    toast(`Group “${group.name}” ready · ${group.inviteCodeDisplay}`);
-  }
-
-  async function joinGroup() {
-    const code = groupCodeDraft.trim();
-    if (!code) return;
-    const group = await api.joinGroup(tokenRef.current || (await token()), { code });
-    setGroups((current) => [group, ...current.filter((item) => item.id !== group.id)]);
-    setGroupCodeDraft('');
-    toast(`Joined ${group.name}.`);
-  }
-
   const viewerId = me?.id ?? authUser?.sub ?? '';
 
-  // A tapped device alert lands here with ?stashFor=<friendId>.
+  // A tapped device alert lands here with ?stashFor=<friendId>; ?preview=alerts opens the demo sheet.
   useEffect(() => {
     if (!me) return;
     const params = new URLSearchParams(window.location.search);
     const stashFor = params.get('stashFor');
-    if (!stashFor) return;
-    setReplyTo(stashFor);
-    setPresetCondition(params.get('condition') ?? undefined);
-    setCapturing(true);
-    const alertId = params.get('alert');
-    if (alertId) {
-      void (async () => {
-        try {
-          await api.ackAlert(tokenRef.current || (await token()), alertId);
-        } catch {
-          // Acking is best-effort.
-        }
-      })();
+    const wantsPreview = params.get('preview') === 'alerts';
+    if (!stashFor && !wantsPreview) return;
+    if (stashFor) {
+      openCapture(stashFor);
+      const alertId = params.get('alert');
+      if (alertId) {
+        void (async () => {
+          try {
+            await api.ackAlert(tokenRef.current || (await token()), alertId);
+          } catch {
+            // Acking is best-effort.
+          }
+        })();
+      }
+    }
+    if (wantsPreview) {
+      setPreviewOpen(true);
+      void loadPreview();
     }
     window.history.replaceState({}, document.title, window.location.pathname);
-  }, [me?.id, token]);
-
-  // The API finishes the Spotify handshake and sends the browser back here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me?.id]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('spotify');
@@ -440,7 +658,9 @@ export function HomePage() {
         ? 'Spotify connected.'
         : result === 'declined'
           ? 'Spotify stays disconnected.'
-          : 'Could not connect Spotify. Try again.',
+          : result === 'notallowed'
+            ? 'Spotify refused this account. Add your Spotify email to the app in the Spotify developer dashboard, then connect again.'
+            : 'Could not connect Spotify. Try again.',
     );
     if (result === 'connected') {
       void refresh();
@@ -448,71 +668,428 @@ export function HomePage() {
     window.history.replaceState({}, document.title, window.location.pathname);
   }, [refresh, toast]);
 
-  const empty = inbox.length === 0;
-  const sortedInbox = useMemo(
-    () => [...inbox].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [inbox],
+  const paired = friends.filter((friend) => !friend.isSelf);
+
+  const knownMoments = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const lock of [...inbox, ...sent].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+      if (lock.context && !seen.has(lock.context)) {
+        seen.add(lock.context);
+        out.push(lock.context);
+      }
+    }
+    return out;
+  }, [inbox, sent]);
+
+  const inScope = useCallback(
+    (lock: LockDto) => {
+      if (scope.kind === 'all') return true;
+      if (scope.kind === 'pair') return lock.participantIds.includes(scope.id);
+      if (scope.kind === 'moment') return lock.context === scope.id;
+      const group = groups.find((item) => item.id === scope.id);
+      if (!group) return true;
+      return lock.participantIds.every((id) => group.memberIds.includes(id));
+    },
+    [scope, groups],
   );
+  const scopedInbox = useMemo(
+    () =>
+      inbox.filter(inScope).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [inbox, inScope],
+  );
+  const scopedSent = useMemo(() => sent.filter(inScope), [sent, inScope]);
+  const empty = inbox.length === 0;
+
+  const { waitingMoments, metMoments } = useMemo(() => {
+    const waiting = new Set<string>();
+    const met = new Set<string>();
+    for (const lock of inbox) {
+      if (lock.state === 'UNLOCKED' || !lock.context) continue;
+      (lock.contextMetAt ? met : waiting).add(lock.context);
+    }
+    for (const item of waiting) met.delete(item);
+    return { waitingMoments: [...waiting], metMoments: [...met] };
+  }, [inbox]);
+
+  const mySky: Sky | null = me?.schoolId ? (skies[me.schoolId] ?? null) : null;
+  const skyPrompts = useMemo(() => {
+    if (!me) {
+      return [] as PromptDto[];
+    }
+    return buildSkyPrompts({ me, friends, skies });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, friends, skies, promptTick, clockTick]);
   const prompts = useMemo(() => {
-    if (!me) return [] as PromptDto[];
-    return buildPrompts({ me, friends, inbox, sent, notes, weatherBySchool });
-  }, [me, friends, inbox, sent, notes, weatherBySchool, promptTick]);
+    if (!me) {
+      return [] as PromptDto[];
+    }
+    const weather = mySky ? { tempF: mySky.tempF, label: mySky.label } : null;
+    return [
+      ...skyPrompts,
+      ...buildPrompts({ me, friends, inbox, sent, weather, calendar: calendar?.events }),
+    ].slice(0, 5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, friends, inbox, sent, mySky, skyPrompts, calendar, promptTick]);
+
+  useEffect(() => {
+    if (skyPrompts.length === 0) return;
+    const seen = loadNotified();
+    const fresh = skyPrompts.filter((prompt) => !seen.includes(prompt.triggerKey));
+    if (fresh.length === 0) return;
+    for (const prompt of fresh) {
+      toast(`${prompt.title}. ${prompt.body}`);
+    }
+    try {
+      localStorage.setItem(
+        NOTIFIED_KEY,
+        JSON.stringify([...seen, ...fresh.map((p) => p.triggerKey)].slice(-200)),
+      );
+    } catch {
+      // ignore
+    }
+  }, [skyPrompts, toast]);
+
+  const school = schoolLocation(me?.schoolId);
+  const needsName = Boolean(me && !me.displayNameSet);
+  const scopeValue = scope.kind === 'all' ? 'all' : `${scope.kind}:${scope.id}`;
+  const inviteLink = me ? `${window.location.origin}/pair/${me.pairingCode}` : '';
+  const badge = requests.length + alerts.filter((a) => a.kind !== 'request').length;
+  const alert = alerts[0] ?? null;
+
+  const nameForm = (
+    <form
+      className="field"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void saveName();
+      }}
+    >
+      <label htmlFor="display-name">What should friends call you?</label>
+      <input
+        id="display-name"
+        value={nameDraft}
+        maxLength={40}
+        onChange={(event) => setNameDraft(event.target.value)}
+        placeholder={me?.displayName ?? 'Your name'}
+        autoComplete="nickname"
+      />
+      <button className="btn" type="submit" disabled={!nameDraft.trim()}>
+        Save name
+      </button>
+    </form>
+  );
+
+  const copyButton = (key: string, text: string, label: string, className = 'btn-ghost') => (
+    <button className={className} type="button" onClick={() => void copy(key, text)}>
+      {copied === key ? '✓ Copied' : label}
+    </button>
+  );
+
+  const requestRows = (
+    <>
+      {requests.length === 0 ? (
+        <p className="hint">No requests waiting.</p>
+      ) : (
+        requests.map((request) => (
+          <div className="menu-row" key={request.from.id}>
+            <span className="menu-link">
+              {request.from.displayName}
+              <small>{request.from.schoolName ?? request.from.city ?? 'wants to pair'}</small>
+            </span>
+            <span className="row-actions">
+              <button className="chip active" type="button" onClick={() => void answerRequest(request, true)}>
+                Accept
+              </button>
+              <button className="chip" type="button" onClick={() => void answerRequest(request, false)}>
+                No
+              </button>
+            </span>
+          </div>
+        ))
+      )}
+    </>
+  );
 
   return (
     <>
       <ToastStack toasts={toasts} />
-      <button className="wordmark" type="button" onClick={() => setMenuOpen((v) => !v)}>
-        stash<span>'d</span>
-      </button>
-      {menuOpen && me ? (
-        <div className="account">
-          <p>
-            {me.displayName} · {me.pairingCodeDisplay}
-          </p>
-          <label className="field">
-            Display name
-            <input
-              value={displayNameDraft}
-              onChange={(e) => setDisplayNameDraft(e.target.value)}
-              placeholder="What friends see"
-              maxLength={40}
-            />
-            <button className="btn" type="button" onClick={() => void saveDisplayName()}>
-              Save name
-            </button>
-          </label>
+      <div className="topbar">
+        <span className="wordmark">
+          stash<span>'d</span>
+        </span>
+        <div className="topbar-actions">
+          <button
+            className={`icon-btn ${menu === 'more' ? 'active' : ''}`}
+            type="button"
+            aria-label={badge > 0 ? `Friends and groups, ${badge} waiting` : 'Friends and groups'}
+            aria-expanded={menu === 'more'}
+            onClick={() => openMenu('more')}
+          >
+            <span className="burger" aria-hidden="true" />
+            {badge > 0 ? <span className="badge-dot" aria-hidden="true" /> : null}
+          </button>
+          <button
+            className={`avatar ${menu === 'profile' ? 'active' : ''}`}
+            type="button"
+            aria-label="Profile"
+            aria-expanded={menu === 'profile'}
+            onClick={() => openMenu('profile')}
+          >
+            {me?.picture ? <img src={me.picture} alt="" /> : initial(me?.displayName ?? '?')}
+          </button>
+        </div>
+      </div>
+
+      {menu !== 'none' ? (
+        <div className="scrim" onClick={() => setMenu('none')} aria-hidden="true" />
+      ) : null}
+
+      {menu === 'more' && me ? (
+        <div className="menu" role="menu">
+          {moreView === 'root' ? (
+            <>
+              {requests.length > 0 ? (
+                <button className="menu-item" type="button" onClick={() => setMoreView('requests')}>
+                  Friend requests
+                  <span className="menu-count pill">{requests.length}</span>
+                </button>
+              ) : null}
+              <button className="menu-item" type="button" onClick={() => setMoreView('friend')}>
+                Add a friend <span aria-hidden="true">›</span>
+              </button>
+              <button className="menu-item" type="button" onClick={() => setMoreView('create')}>
+                Create a group <span aria-hidden="true">›</span>
+              </button>
+              <button className="menu-item" type="button" onClick={() => setMoreView('join')}>
+                Join a group <span aria-hidden="true">›</span>
+              </button>
+              <button className="menu-item" type="button" onClick={() => setMoreView('list')}>
+                Groups &amp; pairs
+                <span className="menu-count">{groups.length + paired.length}</span>
+              </button>
+            </>
+          ) : null}
+
+          {moreView === 'requests' ? (
+            <>
+              <h4>Friend requests</h4>
+              {requestRows}
+              <button className="btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </>
+          ) : null}
+
+          {moreView === 'friend' ? (
+            <>
+              <div className="code-block" style={{ margin: '0 0 12px' }}>
+                <div>Your code</div>
+                <strong>{me.pairingCodeDisplay}</strong>
+                {copyButton('invite-menu', inviteLink, 'Copy invite link')}
+              </div>
+              <p className="lede" style={{ marginBottom: 8 }}>
+                Or enter theirs. They'll get a request to accept.
+              </p>
+              <PairingCodeInput error={pairError} onSubmit={pair} />
+              <button className="btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </>
+          ) : null}
+
+          {moreView === 'create' ? (
+            <form
+              className="field"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createGroup();
+              }}
+            >
+              <span>Name the group</span>
+              <input
+                value={groupName}
+                maxLength={40}
+                autoFocus
+                onChange={(event) => setGroupName(event.target.value)}
+                placeholder="the apartment"
+              />
+              <span className="hint">
+                {paired.length > 0
+                  ? `Starts with you and the ${paired.length} ${paired.length === 1 ? 'person' : 'people'} you're paired with. Anyone else joins with the code.`
+                  : 'You get a code. Anyone with it can join.'}
+              </span>
+              <button className="btn" type="submit" disabled={groupBusy || !groupName.trim()}>
+                Create
+              </button>
+              <button className="btn-ghost" type="button" onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {moreView === 'created' && createdGroup ? (
+            <div className="code-block" style={{ margin: 0 }}>
+              <div>{createdGroup.name}</div>
+              <strong>{createdGroup.inviteCodeDisplay}</strong>
+              <p className="hint">Anyone who types this joins the group.</p>
+              {copyButton(`group-${createdGroup.id}`, createdGroup.inviteCode, 'Copy code', 'btn')}
+              <button
+                className="btn-ghost"
+                type="button"
+                style={{ marginTop: 8 }}
+                onClick={() => {
+                  setScope({ kind: 'group', id: createdGroup.id });
+                  setMenu('none');
+                }}
+              >
+                Done
+              </button>
+            </div>
+          ) : null}
+
+          {moreView === 'join' ? (
+            <form
+              className="field"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void joinGroup();
+              }}
+            >
+              <span>Enter a group code</span>
+              <input
+                value={groupCode}
+                maxLength={7}
+                autoFocus
+                onChange={(event) => setGroupCode(event.target.value.toUpperCase())}
+                placeholder="KRF-2M9"
+                autoCapitalize="characters"
+              />
+              <button className="btn" type="submit" disabled={groupBusy || !groupCode.trim()}>
+                Join
+              </button>
+              <button className="btn-ghost" type="button" onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </form>
+          ) : null}
+
+          {moreView === 'list' ? (
+            <>
+              <h4>Groups</h4>
+              {groups.length === 0 ? (
+                <p className="hint">None yet.</p>
+              ) : (
+                groups.map((group) => (
+                  <div className="menu-row" key={group.id}>
+                    <button
+                      type="button"
+                      className="menu-link"
+                      onClick={() => {
+                        setScope({ kind: 'group', id: group.id });
+                        setMenu('none');
+                      }}
+                    >
+                      {group.name}
+                      <small>{group.members.map((m) => m.displayName).join(', ')}</small>
+                    </button>
+                    <button
+                      type="button"
+                      className="chip"
+                      onClick={() => void copy(`code-${group.id}`, group.inviteCode)}
+                    >
+                      {copied === `code-${group.id}` ? '✓ Copied' : group.inviteCodeDisplay}
+                    </button>
+                  </div>
+                ))
+              )}
+              <h4>Pairs</h4>
+              {paired.length === 0 ? (
+                <p className="hint">Nobody yet. Use “Add a friend”.</p>
+              ) : (
+                paired.map((friend) => (
+                  <div className="menu-row" key={friend.id}>
+                    <button
+                      type="button"
+                      className="menu-link"
+                      onClick={() => {
+                        setScope({ kind: 'pair', id: friend.id });
+                        setMenu('none');
+                      }}
+                    >
+                      {friend.displayName}
+                      <small>{friend.schoolName ?? friend.city ?? 'No school yet'}</small>
+                    </button>
+                    <span className="avatar small">
+                      {friend.picture ? <img src={friend.picture} alt="" /> : initial(friend.displayName)}
+                    </span>
+                  </div>
+                ))
+              )}
+              <button className="btn-ghost" type="button" style={{ marginTop: 10 }} onClick={() => setMoreView('root')}>
+                Back
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {menu === 'profile' && me ? (
+        <div className="menu" role="menu">
+          <div className="menu-profile">
+            <span className="avatar">
+              {me.picture ? <img src={me.picture} alt="" /> : initial(me.displayName)}
+            </span>
+            <div>
+              <strong>{me.displayName}</strong>
+              <small>{school ? `${school.name} · ${school.city}` : 'No school yet'}</small>
+              {mySky ? (
+                <small>
+                  {describeSky(mySky)} · {localClock(mySky.timezone)}
+                </small>
+              ) : null}
+            </div>
+          </div>
+          {nameForm}
           <label className="field">
             School
-            <select value={me.schoolId ?? ''} onChange={(e) => void saveSchool(e.target.value)}>
-              <option value="">One field. Highest yield.</option>
-              {SCHOOL_OPTIONS.map((school) => (
-                <option key={school.id} value={school.id}>
-                  {school.name}
+            <select
+              value={me.schoolId ?? ''}
+              onChange={(event) => void saveSchool(event.target.value)}
+            >
+              <option value="">Pick your school</option>
+              {SCHOOL_OPTIONS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
                 </option>
               ))}
             </select>
-          </label>
-          <div className="field toggle-row">
-            <span>
-              Share coarse place
-              <small>Friends see “a cafe,” never a pin.</small>
+            <span className="hint">
+              Your school stands in for your location: weather, clock, calendar. No GPS.
             </span>
-            <button className="btn-ghost" type="button" onClick={() => void toggleLocationSharing()}>
-              {me.locationSharing ? 'On' : 'Off'}
-            </button>
-          </div>
-          {me.locationSharing && me.placeLabel ? (
-            <p className="hint">Right now: {me.placeLabel}</p>
+          </label>
+          {calendar?.status.available ? (
+            <p className="hint">
+              Google Calendar {calendar.status.connected ? 'connected' : 'not connected'}
+              {calendar.status.reason && !calendar.status.connected
+                ? ` · ${calendar.status.reason}`
+                : ''}
+            </p>
           ) : null}
+          <div className="code-block" style={{ margin: '12px 0' }}>
+            <div>Your code</div>
+            <strong>{me.pairingCodeDisplay}</strong>
+            {copyButton('invite-profile', inviteLink, 'Copy invite link')}
+          </div>
 
-          <div className="field toggle-row">
+          <div className="field alerts-row">
             <span>
               Stash alerts
-              <small>
+              <span className="hint">
                 {pushSupported()
                   ? 'Device pop-ups about your friends\u2019 campuses. Max 3\u20134 a day, never overnight.'
                   : 'Add stash\u2019d to your home screen to get device alerts.'}
-              </small>
+              </span>
             </span>
             <button
               className="btn-ghost"
@@ -533,88 +1110,10 @@ export function HomePage() {
               </button>
             </p>
           ) : null}
-          <button className="btn-ghost" type="button" onClick={openPreview}>
+          <button className="btn-ghost" type="button" style={{ marginBottom: 10 }} onClick={openPreview}>
             Preview today's alerts
           </button>
 
-          <label className="field">
-            Groups
-            <input
-              value={groupNameDraft}
-              onChange={(e) => setGroupNameDraft(e.target.value)}
-              placeholder="Squad name"
-              maxLength={40}
-            />
-            <div className="chip-row">
-              {friends
-                .filter((friend) => !friend.isSelf)
-                .map((friend) => {
-                  const selected = groupMemberIds.includes(friend.id);
-                  return (
-                    <button
-                      key={friend.id}
-                      type="button"
-                      className={`chip ${selected ? 'active' : ''}`}
-                      onClick={() =>
-                        setGroupMemberIds((current) =>
-                          selected
-                            ? current.filter((id) => id !== friend.id)
-                            : [...current, friend.id],
-                        )
-                      }
-                    >
-                      {friend.displayName}
-                    </button>
-                  );
-                })}
-            </div>
-            <button className="btn" type="button" onClick={() => void createGroup()}>
-              Create group
-            </button>
-            <input
-              value={groupCodeDraft}
-              onChange={(e) => setGroupCodeDraft(e.target.value)}
-              placeholder="Join with code"
-            />
-            <button className="btn-ghost" type="button" onClick={() => void joinGroup()}>
-              Join group
-            </button>
-            {groups.length > 0 ? (
-              <ul className="group-list">
-                {groups.map((group) => (
-                  <li key={group.id}>
-                    <strong>{group.name}</strong>
-                    <span>
-                      {group.inviteCodeDisplay} ·{' '}
-                      {group.members.map((m) => m.displayName).join(', ')}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </label>
-
-          <label className="field">
-            Notebook for a friend
-            <select value={noteFriendId} onChange={(e) => setNoteFriendId(e.target.value)}>
-              <option value="">Who is this about?</option>
-              {friends
-                .filter((friend) => !friend.isSelf)
-                .map((friend) => (
-                  <option key={friend.id} value={friend.id}>
-                    {friend.displayName}
-                  </option>
-                ))}
-            </select>
-            <input
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              placeholder="her exam, thursday"
-            />
-            <button className="btn" type="button" onClick={() => void saveNote()}>
-              Remember for me
-            </button>
-          </label>
           <button
             className="btn-ghost"
             type="button"
@@ -627,33 +1126,101 @@ export function HomePage() {
         </div>
       ) : null}
 
+      {/* One thing that needs an answer, over everything else. */}
+      {alert && !capturing ? (
+        <div className="alert-sheet" role="dialog" aria-modal="true">
+          <div className="alert-card">
+            {alert.kind === 'request' ? (
+              <>
+                <span className="avatar">
+                  {alert.request.from.picture ? (
+                    <img src={alert.request.from.picture} alt="" />
+                  ) : (
+                    initial(alert.request.from.displayName)
+                  )}
+                </span>
+                <h3>{alert.request.from.displayName} wants to pair</h3>
+                <p className="lede">
+                  {alert.request.from.schoolName
+                    ? `${alert.request.from.schoolName}. `
+                    : ''}
+                  Accept and you can stash to each other.
+                </p>
+                <button className="btn" type="button" onClick={() => void answerRequest(alert.request, true)}>
+                  Accept
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
+                  Later
+                </button>
+              </>
+            ) : alert.kind === 'opening' ? (
+              <>
+                <h3>{alert.lock.senderName} is opening it now</h3>
+                <p className="lede">
+                  Open together and you both see each other's at the same moment. They'll wait a minute.
+                </p>
+                <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
+                  Open together
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
+                  Not now
+                </button>
+              </>
+            ) : (
+              <>
+                <h3>{alert.lock.senderName} opened it without you</h3>
+                <p className="lede">Yours is still sealed. Take a look when you're ready.</p>
+                <button className="btn" type="button" onClick={() => void confirm(alert.lock.id)}>
+                  Take a look
+                </button>
+                <button className="btn-ghost" type="button" onClick={() => dropAlert(alert.id)}>
+                  Later
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       <div
         className={`pane-track ${showSent ? 'sent' : ''}`}
-        onTouchStart={(e) => {
-          touchStart.current = e.changedTouches[0]?.clientX ?? null;
+        onTouchStart={(event) => {
+          touchStart.current = event.changedTouches[0]?.clientX ?? null;
         }}
-        onTouchEnd={(e) => {
-          if (touchStart.current == null) return;
-          const delta = (e.changedTouches[0]?.clientX ?? 0) - touchStart.current;
-          if (delta > 60) setShowSent(true);
-          if (delta < -60) setShowSent(false);
+        onTouchEnd={(event) => {
+          if (touchStart.current == null) {
+            return;
+          }
+          const delta = (event.changedTouches[0]?.clientX ?? 0) - touchStart.current;
+          if (delta > 60) {
+            setShowSent(true);
+          }
+          if (delta < -60) {
+            setShowSent(false);
+          }
           touchStart.current = null;
         }}
       >
         <section className="pane" aria-label="Sent">
-          <p className="lede">
-            <button type="button" className="btn-ghost" onClick={() => setShowSent(false)}>
-              Sent. Swipe left to go back
+          <div className="pane-head">
+            <span className="pane-title">Sent</span>
+            <button
+              type="button"
+              className="arrow-btn"
+              aria-label="Back to your Stash"
+              onClick={() => setShowSent(false)}
+            >
+              ›
             </button>
-          </p>
+          </div>
           <div className="feed">
-            {sent.length === 0 ? (
+            {scopedSent.length === 0 ? (
               <div className="empty">
                 <h2>Nothing sent yet</h2>
                 <p className="lede">The shutter at the bottom is waiting.</p>
               </div>
             ) : (
-              sent.map((lock) => (
+              scopedSent.map((lock) => (
                 <Polaroid key={lock.id} lock={lock} viewerId={viewerId} onConfirm={confirm} />
               ))
             )}
@@ -661,17 +1228,99 @@ export function HomePage() {
         </section>
 
         <section className="pane" aria-label="The Stash">
+          {needsName && menu === 'none' ? (
+            <div className="code-block name-card">
+              <div>One thing first</div>
+              {nameForm}
+              <p className="hint">Right now you show up as “{me?.displayName}”.</p>
+            </div>
+          ) : null}
+
+          {!empty ? (
+            <div className="pane-head">
+              <button
+                type="button"
+                className="arrow-btn"
+                aria-label="See what you sent"
+                onClick={() => setShowSent(true)}
+              >
+                ‹
+              </button>
+              <select
+                className="scope"
+                aria-label="Show"
+                value={scopeValue}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === 'all') setScope({ kind: 'all' });
+                  else {
+                    const index = value.indexOf(':');
+                    const kind = value.slice(0, index) as 'group' | 'pair' | 'moment';
+                    setScope({ kind, id: value.slice(index + 1) });
+                  }
+                }}
+              >
+                <option value="all">Everyone</option>
+                {groups.length > 0 ? (
+                  <optgroup label="Groups">
+                    {groups.map((group) => (
+                      <option key={group.id} value={`group:${group.id}`}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {paired.length > 0 ? (
+                  <optgroup label="Pairs">
+                    {paired.map((friend) => (
+                      <option key={friend.id} value={`pair:${friend.id}`}>
+                        {friend.displayName}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {knownMoments.length > 0 ? (
+                  <optgroup label="Moments">
+                    {knownMoments.map((moment) => (
+                      <option key={moment} value={`moment:${moment}`}>
+                        {moment}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+              </select>
+            </div>
+          ) : null}
+
+          {waitingMoments.length + metMoments.length > 0 ? (
+            <div className="here-row" aria-label="I'm here">
+              <span title="Some cards for you are tied to a moment. Tap it when you're there and the sender is told.">
+                I'm here:
+              </span>
+              {[...waitingMoments, ...metMoments].map((moment) => {
+                const done = metMoments.includes(moment);
+                return (
+                  <button
+                    key={moment}
+                    type="button"
+                    className={`chip ${done ? 'active' : ''}`}
+                    disabled={hereBusy !== null || done}
+                    onClick={() => void here(moment)}
+                  >
+                    {hereBusy === moment ? '…' : `${done ? '✓ ' : ''}${moment}`}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
           {prompts.length > 0 ? (
             <div className="prompt-rail">
               {prompts.map((prompt) => (
                 <PromptCard
                   key={prompt.id}
                   prompt={prompt}
-                  onStash={(friendId, suggestedCondition) => {
-                    setReplyTo(friendId);
-                    setPresetCondition(suggestedCondition);
-                    setCapturing(true);
-                  }}
+                  onStash={(friendId) => openCapture(friendId)}
                   onDismiss={(triggerKey) => {
                     const result = dismissPrompt(triggerKey);
                     setPromptTick((value) => value + 1);
@@ -693,74 +1342,41 @@ export function HomePage() {
                 <div className="code-block">
                   <div>Your code</div>
                   <strong>{me.pairingCodeDisplay}</strong>
-                  <button
-                    className="btn"
-                    type="button"
-                    onClick={() =>
-                      void navigator.clipboard.writeText(
-                        `${window.location.origin}/pair/${me.pairingCode}`,
-                      )
-                    }
-                  >
-                    Copy invite link
-                  </button>
+                  {copyButton('invite-empty', inviteLink, 'Copy invite link', 'btn')}
                 </div>
               ) : null}
               <div className="rule">or</div>
-              <p className="lede">Enter a friend's code</p>
-              <PairingCodeInput
-                error={pairError}
-                onSubmit={async (code) => {
-                  try {
-                    setPairError('');
-                    await api.pair(tokenRef.current || (await token()), code);
-                    await refresh();
-                    toast('Paired.');
-                  } catch (err) {
-                    setPairError(err instanceof Error ? err.message : 'Could not pair.');
-                  }
-                }}
-              />
+              <p className="lede">Enter a friend's code. They'll get a request to accept.</p>
+              <PairingCodeInput error={pairError} onSubmit={pair} />
             </div>
           ) : (
-            <>
-              <p className="lede">
-                <button type="button" className="btn-ghost" onClick={() => setShowSent(true)}>
-                  Swipe right for what you sent
-                </button>
-              </p>
-              <div className="feed">
-                {sortedInbox.map((lock) => (
-                  <Polaroid
-                    key={lock.id}
-                    lock={lock}
-                    viewerId={viewerId}
-                    onConfirm={confirm}
-                    onSetCondition={setCondition}
-                    onReply={(recipientId) => {
-                      setReplyTo(recipientId);
-                      setPresetCondition(undefined);
-                      setCapturing(true);
-                    }}
-                  />
-                ))}
-              </div>
-            </>
+            <div className="feed">
+              {scopedInbox.length === 0 ? (
+                <p className="hint" style={{ textAlign: 'center' }}>
+                  Nothing here yet for this{' '}
+                  {scope.kind === 'group' ? 'group' : scope.kind === 'moment' ? 'moment' : 'pair'}.
+                </p>
+              ) : null}
+              {scopedInbox.map((lock) => (
+                <Polaroid
+                  key={lock.id}
+                  lock={lock}
+                  viewerId={viewerId}
+                  onConfirm={confirm}
+                  onSetCondition={setCondition}
+                  onReply={(recipientId, lockId) => openCapture(recipientId, lockId)}
+                />
+              ))}
+            </div>
           )}
         </section>
       </div>
 
-      <div className="capture">
-        <button
-          type="button"
-          aria-label="Capture"
-          onClick={() => {
-            setReplyTo(undefined);
-            setPresetCondition(undefined);
-            setCapturing(true);
-          }}
-        />
-      </div>
+      {!capturing ? (
+        <div className="capture">
+          <button type="button" aria-label="Capture" onClick={() => openCapture()} />
+        </div>
+      ) : null}
 
       {previewOpen ? (
         <AlertPreview
@@ -769,8 +1385,8 @@ export function HomePage() {
           pushConfigured={Boolean(alertStatus?.pushConfigured)}
           onClose={() => setPreviewOpen(false)}
           onRefresh={() => void loadPreview()}
-          onPop={(alert) => {
-            void showLocalAlert(alert).then((shown) => {
+          onPop={(item) => {
+            void showLocalAlert(item).then((shown) => {
               toast(
                 shown
                   ? 'Check your notification center.'
@@ -779,11 +1395,9 @@ export function HomePage() {
             });
           }}
           onSendReal={() => void sendTestAlert()}
-          onStash={(alert) => {
+          onStash={(item) => {
             setPreviewOpen(false);
-            setReplyTo(alert.friendId);
-            setPresetCondition(alert.suggestedCondition);
-            setCapturing(true);
+            openCapture(item.friendId);
           }}
         />
       ) : null}
@@ -792,32 +1406,31 @@ export function HomePage() {
         <CaptureSheet
           friends={friends}
           groups={groups}
+          people={people}
+          skies={skies}
+          knownMoments={knownMoments}
+          eventsFor={(schoolId) => schoolEventsFor(schoolId, new Date(), 14).slice(0, 2)}
+          campusFor={(schoolId) => campusFor(schoolId)}
           token={token}
           presetRecipientId={replyTo}
-          presetConditionLabel={presetCondition}
-          onClose={() => {
-            setCapturing(false);
-            setPresetCondition(undefined);
-          }}
+          replyToId={replyToLockId}
+          onClose={() => setCapturing(false)}
           onSubmit={async (input) => {
-            const locks = await api.createLock(tokenRef.current || (await token()), {
-              recipientId: input.recipientId,
-              groupId: input.groupId,
-              text: input.text,
-              imageUrl: input.imageUrl,
-              conditionType: input.conditionType,
-              conditionLabel: input.conditionLabel,
-            });
-            for (const lock of locks) {
-              setSent((current) => upsertLock(current, lock));
-              if (lock.recipientId === viewerId) {
-                setInbox((current) => upsertLock(current, lock));
-              }
+            const lock = await api.createLock(tokenRef.current || (await token()), input);
+            setSent((current) => upsertLock(current, lock));
+            if (lock.recipientIds.includes(viewerId)) {
+              setInbox((current) => upsertLock(current, lock));
             }
             setCapturing(false);
-            setPresetCondition(undefined);
-            toast(locks.length > 1 ? `Stashed to ${locks.length} people.` : 'Stashed.');
+            toast(
+              lock.replyToId
+                ? `Stashed back. ${lock.recipientName} starts the opening.`
+                : lock.recipients.length > 1
+                  ? `Stashed for ${lock.recipients.length} people.`
+                  : 'Stashed.',
+            );
             setPromptTick((value) => value + 1);
+            void refresh();
           }}
         />
       ) : null}

@@ -113,7 +113,10 @@ async function main() {
     const [userAId, userBId] = [myId, friend.id].sort();
     await friendships.updateOne(
       { userAId, userBId },
-      { $setOnInsert: { userAId, userBId, createdAt: new Date(), updatedAt: new Date() } },
+      {
+        $setOnInsert: { userAId, userBId, createdAt: new Date() },
+        $set: { status: 'ACCEPTED', updatedAt: new Date() },
+      },
       { upsert: true },
     );
   }
@@ -140,7 +143,10 @@ async function main() {
     console.log(`Cleared ${wiped.deletedCount} alert(s) so today's budget starts at 0.`);
   }
 
-  const friendCount = await friendships.countDocuments({ $or: [{ userAId: myId }, { userBId: myId }] });
+  const friendCount = await friendships.countDocuments({
+    $or: [{ userAId: myId }, { userBId: myId }],
+    status: { $ne: 'PENDING' },
+  });
   const groupCount = await groups.countDocuments({ memberIds: myId });
 
   console.log(`\nSeeded for ${me!.displayName} (${myId})`);

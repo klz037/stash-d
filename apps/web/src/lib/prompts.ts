@@ -1,4 +1,11 @@
-import type { FriendDto, FriendNoteDto, LockDto, PromptDto, UserDto } from '@stashd/shared';
+import type {
+  CalendarEventDto,
+  FriendDto,
+  FriendNoteDto,
+  LockDto,
+  PromptDto,
+  UserDto,
+} from '@stashd/shared';
 import calendarData from '../data/academic-calendars.json';
 
 type SchoolEvent = {
@@ -6,6 +13,11 @@ type SchoolEvent = {
   label: string;
   kind: 'stress' | 'lull' | 'milestone';
 };
+
+type Game = { date: string; label: string; sport: string; home: boolean };
+
+/** A campus thing a friend can ask about: the Fence, the Cathedral, the Quad. */
+export type Quirk = { label: string; prompt: string; condition: string; sourceUrl: string };
 
 type School = {
   id: string;
@@ -15,7 +27,42 @@ type School = {
   lon: number;
   sourceUrl: string;
   events: SchoolEvent[];
+  mascot?: string;
+  teams?: string;
+  athleticsUrl?: string;
+  athletics?: Game[];
+  quirks?: Quirk[];
 };
+
+export type Campus = {
+  id: string;
+  name: string;
+  city: string;
+  mascot?: string;
+  teams?: string;
+  quirks: Quirk[];
+  /** Next game within two weeks, if the school has a schedule loaded. */
+  nextGame: (Game & { daysAway: number }) | null;
+};
+
+/** Everything the review card and the condition chips want to know about a school. */
+export function campusFor(schoolId: string | undefined, now = new Date()): Campus | null {
+  const school = schools.find((item) => item.id === schoolId);
+  if (!school) return null;
+  const games = (school.athletics ?? [])
+    .map((game) => ({ ...game, daysAway: daysBetween(now, new Date(`${game.date}T12:00:00`)) }))
+    .filter((game) => game.daysAway >= 0 && game.daysAway <= 14)
+    .sort((a, b) => a.daysAway - b.daysAway);
+  return {
+    id: school.id,
+    name: school.name,
+    city: school.city,
+    mascot: school.mascot,
+    teams: school.teams,
+    quirks: school.quirks ?? [],
+    nextGame: games[0] ?? null,
+  };
+}
 
 const schools = calendarData.schools as School[];
 
@@ -46,32 +93,16 @@ function dayStamp(date = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
-function placeCondition(label: string): string {
-  const lower = label.toLowerCase();
-  if (lower.includes('cafe') || lower.includes('coffee')) {
-    return 'Open when you get your coffee';
-  }
-  if (lower.includes('library')) {
-    return 'Open when you find a quiet table';
-  }
-  if (lower.includes('campus')) {
-    return 'Open when you get to campus';
-  }
-  return `Open when you're ${label}`;
-}
-
-export function schoolById(id?: string): School | undefined {
-  if (!id) return undefined;
-  return schools.find((school) => school.id === id);
-}
-
 export function buildPrompts(input: {
   me: UserDto;
   friends: FriendDto[];
   inbox: LockDto[];
   sent: LockDto[];
   notes?: FriendNoteDto[];
-  weatherBySchool?: Record<string, { tempF: number; label: string }>;
+  /** Current weather at the user's school, if they picked one. */
+  weather?: { tempF: number; label: string } | null;
+  /** The user's own Google Calendar, via Auth0 Token Vault. */
+  calendar?: CalendarEventDto[];
   now?: Date;
 }): PromptDto[] {
   const now = input.now ?? new Date();
@@ -102,12 +133,10 @@ export function buildPrompts(input: {
   }
 
   for (const friend of friends) {
-    const sentToThem = input.sent.filter((lock) => lock.recipientId === friend.id);
+    const sentToThem = input.sent.filter((lock) => lock.recipientIds.includes(friend.id));
     const fromThem = input.inbox.filter((lock) => lock.senderId === friend.id);
     const recentSent = sentToThem.slice(0, 4);
-    const recentFromThem = fromThem.filter(
-      (lock) => daysBetween(new Date(lock.createdAt), now) < 30,
-    );
+    const recentFromThem = fromThem.filter((lock) => daysBetween(new Date(lock.createdAt), now) < 30);
     if (recentSent.length >= 3 && recentFromThem.length === 0) {
       push({
         id: `reciprocity-${friend.id}`,
@@ -145,9 +174,7 @@ export function buildPrompts(input: {
     const opened = fromThem.filter((lock) => lock.state === 'UNLOCKED');
     const unanswered = opened.filter(
       (lock) =>
-        !sentToThem.some(
-          (sent) => new Date(sent.createdAt) > new Date(lock.unlockedAt ?? lock.createdAt),
-        ),
+        !sentToThem.some((sent) => new Date(sent.createdAt) > new Date(lock.unlockedAt ?? lock.createdAt)),
     );
     if (unanswered[0]) {
       push({
@@ -162,9 +189,73 @@ export function buildPrompts(input: {
       });
     }
 
-    const first = [...sentToThem, ...fromThem].sort((a, b) =>
-      a.createdAt.localeCompare(b.createdAt),
-    )[0];
+    // Their school's calendar. "Maya's finals start in 3 days" is the most
+    // reliable reason to stash something, and it costs the user nothing.
+    const friendSchool = schools.find((school) => school.id === friend.schoolId);
+    if (friendSchool) {
+      for (const event of friendSchool.events) {
+        const delta = daysBetween(now, new Date(`${event.date}T12:00:00`));
+        if (delta < 0 || delta > 7) continue;
+        const whenLabel = delta === 0 ? 'today' : delta === 1 ? 'tomorrow' : `in ${delta} days`;
+        push({
+          id: `fschool-${friend.id}-${event.date}`,
+          kind: 'tier1',
+          emotion: event.kind,
+          title: `${friend.displayName}: ${event.label} ${whenLabel}`,
+          body:
+            event.kind === 'stress'
+              ? `${friendSchool.name}. Stash something ${friend.displayName} opens when it's over.`
+              : event.kind === 'lull'
+                ? `${friendSchool.name}. A quiet stretch. Send something slow.`
+                : `${friendSchool.name}. Mark it with a polaroid.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          sourceUrl: friendSchool.sourceUrl,
+          triggerKey: `fschool:${friend.id}:${event.date}`,
+        });
+        break;
+      }
+    }
+
+    // Game day at their school. "Good luck to the Huskies today."
+    if (friendSchool) {
+      const campus = campusFor(friendSchool.id, now);
+      const game = campus?.nextGame;
+      if (game && game.daysAway <= 1 && campus?.mascot) {
+        push({
+          id: `game-${friend.id}-${game.date}`,
+          kind: 'tier1',
+          emotion: 'milestone',
+          title: `Good luck to the ${campus.mascot} ${game.daysAway === 0 ? 'today' : 'tomorrow'}!`,
+          body: `${game.label}${game.home ? ', at home' : ''}. Stash something ${friend.displayName} opens after the game.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          sourceUrl: friendSchool.athleticsUrl,
+          triggerKey: `game:${friend.id}:${game.date}`,
+        });
+      }
+
+      // A campus thing to ask about. One per friend, rotating by day so the
+      // Fence isn't every day.
+      const quirks = campus?.quirks ?? [];
+      if (quirks.length > 0) {
+        const dayIndex = Math.floor(now.getTime() / 86_400_000);
+        const quirk = quirks[dayIndex % quirks.length];
+        push({
+          id: `quirk-${friend.id}-${quirk.label}`,
+          kind: 'tier1',
+          emotion: 'memory',
+          title: quirk.prompt,
+          body: `Ask ${friend.displayName} for a picture of ${quirk.label}, or stash one that opens there.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          sourceUrl: quirk.sourceUrl,
+          triggerKey: `quirk:${friend.id}:${quirk.label}:${dayStamp(now)}`,
+        });
+      }
+    }
+
+    const first = [...sentToThem, ...fromThem].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     if (first) {
       const created = new Date(first.createdAt);
       if (
@@ -181,78 +272,6 @@ export function buildPrompts(input: {
           friendId: friend.id,
           friendName: friend.displayName,
           triggerKey: `memory:${friend.id}:${now.getFullYear()}`,
-        });
-      }
-    }
-
-    if (friend.placeLabel) {
-      const condition = placeCondition(friend.placeLabel);
-      push({
-        id: `place-${friend.id}-${friend.placeLabel}`,
-        kind: 'location',
-        emotion: 'place',
-        title: `${friend.displayName} is at ${friend.placeLabel}`,
-        body: `Stash something they can open in the moment — “${condition}.”`,
-        friendId: friend.id,
-        friendName: friend.displayName,
-        suggestedCondition: condition,
-        triggerKey: `place:${friend.id}:${friend.placeLabel}:${dayStamp(now)}`,
-      });
-    }
-
-    const friendSchool = schoolById(friend.schoolId);
-    if (friendSchool) {
-      for (const event of friendSchool.events) {
-        const when = new Date(`${event.date}T12:00:00`);
-        const delta = daysBetween(now, when);
-        if (delta < 0 || delta > 14) continue;
-        const whenLabel = delta === 0 ? 'today' : `in ${delta} day${delta === 1 ? '' : 's'}`;
-        const body =
-          event.kind === 'stress'
-            ? `${friend.displayName}'s ${event.label} at ${friendSchool.name} is ${whenLabel}. Stash something they can open when it hits.`
-            : event.kind === 'lull'
-              ? `${event.label} at ${friendSchool.name}. Soft day for ${friend.displayName}.`
-              : `${event.label} at ${friendSchool.name}. Mark it with a polaroid for ${friend.displayName}.`;
-        push({
-          id: `friend-school-${friend.id}-${event.date}`,
-          kind: 'tier1',
-          emotion: event.kind,
-          title: `${friend.displayName} · ${event.label}`,
-          body,
-          friendId: friend.id,
-          friendName: friend.displayName,
-          sourceUrl: friendSchool.sourceUrl,
-          triggerKey: `friend-school:${friend.id}:${event.date}:${event.kind}`,
-        });
-      }
-
-      const weather = input.weatherBySchool?.[friendSchool.id];
-      if (
-        weather &&
-        (weather.label === 'rainy' ||
-          weather.label === 'snowy' ||
-          weather.label === 'stormy' ||
-          weather.tempF >= 85 ||
-          weather.tempF <= 32)
-      ) {
-        const vibe =
-          weather.label === 'rainy' || weather.label === 'stormy'
-            ? 'wet out'
-            : weather.label === 'snowy'
-              ? 'snowy'
-              : weather.tempF >= 85
-                ? 'sweltering'
-                : 'freezing';
-        push({
-          id: `weather-${friend.id}-${dayStamp(now)}`,
-          kind: 'weather',
-          emotion: 'weather',
-          title: `${friendSchool.city} is ${vibe}`,
-          body: `${weather.tempF}°F and ${weather.label} near ${friend.displayName}'s campus. Stash something for when they get inside.`,
-          friendId: friend.id,
-          friendName: friend.displayName,
-          suggestedCondition: 'Open when you get inside',
-          triggerKey: `weather:${friend.id}:${dayStamp(now)}:${weather.label}`,
         });
       }
     }
@@ -276,32 +295,91 @@ export function buildPrompts(input: {
     }
   }
 
-  const mySchool = schoolById(input.me.schoolId);
+  // Your own calendar, read through Auth0 Token Vault. Anything in the next
+  // three days is a reason: "Stash something to open after."
+  for (const event of input.calendar ?? []) {
+    const start = new Date(event.allDay ? `${event.start}T12:00:00` : event.start);
+    const delta = daysBetween(now, start);
+    if (delta < 0 || delta > 3) continue;
+    const friend = friends[0];
+    if (!friend) break;
+    const when = event.allDay
+      ? delta === 0 ? 'Today' : delta === 1 ? 'Tomorrow' : `In ${delta} days`
+      : start.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    push({
+      id: `cal-${event.id}`,
+      kind: 'tier05',
+      emotion: 'milestone',
+      title: event.title,
+      body: `${when}. Stash something ${friend.displayName} opens once it's done.`,
+      friendId: friend.id,
+      friendName: friend.displayName,
+      triggerKey: `cal:${event.id}`,
+    });
+  }
+
+  const mySchool = schools.find((school) => school.id === input.me.schoolId);
   if (mySchool) {
-    for (const event of mySchool.events) {
-      const when = new Date(`${event.date}T12:00:00`);
-      const delta = daysBetween(now, when);
-      if (delta < 0 || delta > 14) continue;
-      const friend = friends[0];
-      if (!friend) break;
-      const whenLabel = delta === 0 ? 'today' : `in ${delta} day${delta === 1 ? '' : 's'}`;
+    // Only the nearest thing on your own calendar, and only inside a week.
+    // Titled with the school so it never reads as a generic "add/drop deadline".
+    const nextEvent = mySchool.events
+      .map((event) => ({ ...event, delta: daysBetween(now, new Date(`${event.date}T12:00:00`)) }))
+      .filter((event) => event.delta >= 0 && event.delta <= 7)
+      .sort((a, b) => a.delta - b.delta)[0];
+    const friend = friends[0];
+    if (nextEvent && friend) {
+      const { delta } = nextEvent;
+      const whenLabel = delta === 0 ? 'today' : delta === 1 ? 'tomorrow' : `in ${delta} days`;
       const body =
-        event.kind === 'stress'
-          ? `${mySchool.name}'s ${event.label} is ${whenLabel}. Stash something ${friend.displayName} can open when it hits.`
-          : event.kind === 'lull'
-            ? `${event.label} at ${mySchool.name}. Soft day — send ${friend.displayName} something quiet.`
-            : `${event.label} at ${mySchool.name}. Mark it with a polaroid for ${friend.displayName}.`;
+        nextEvent.kind === 'stress'
+          ? `Your ${nextEvent.label} is ${whenLabel}. Stash something ${friend.displayName} can open when it's over.`
+          : nextEvent.kind === 'lull'
+            ? `${nextEvent.label} ${whenLabel}. Soft day — send ${friend.displayName} something quiet.`
+            : `${nextEvent.label} ${whenLabel}. Mark it with a polaroid for ${friend.displayName}.`;
       push({
-        id: `school-${mySchool.id}-${event.date}`,
+        id: `school-${mySchool.id}-${nextEvent.date}`,
         kind: 'tier1',
-        emotion: event.kind,
-        title: event.label,
+        emotion: nextEvent.kind,
+        title: `${mySchool.name}: ${nextEvent.label} ${whenLabel}`,
         body,
         friendId: friend.id,
         friendName: friend.displayName,
         sourceUrl: mySchool.sourceUrl,
-        triggerKey: `school:${mySchool.id}:${event.date}:${event.kind}`,
+        triggerKey: `school:${mySchool.id}:${nextEvent.date}:${nextEvent.kind}`,
       });
+    }
+
+    const weather = input.weather;
+    if (weather && ['rainy', 'snowy', 'stormy'].includes(weather.label)) {
+      const friend = friends[0];
+      if (friend) {
+        push({
+          id: `weather-${dayStamp(now)}`,
+          kind: 'tier1',
+          emotion: 'weather',
+          title: `${weather.label[0].toUpperCase()}${weather.label.slice(1)} in ${mySchool.city}`,
+          body: `${weather.tempF}° and ${weather.label}. Stash ${friend.displayName} something to open when it clears.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          triggerKey: `weather:${weather.label}:${dayStamp(now)}`,
+        });
+      }
+    }
+
+    if (now.getHours() === 18) {
+      const friend = friends[0];
+      if (friend) {
+        push({
+          id: `sunset-${dayStamp(now)}`,
+          kind: 'tier1',
+          emotion: 'weather',
+          title: 'Sunset soon',
+          body: `Send ${friend.displayName} the sky from ${mySchool.city}.`,
+          friendId: friend.id,
+          friendName: friend.displayName,
+          triggerKey: `sunset:${dayStamp(now)}`,
+        });
+      }
     }
   }
 
@@ -321,9 +399,7 @@ export function buildPrompts(input: {
     }
   }
 
-  const priority = (kind: PromptDto['kind']) =>
-    kind === 'location' ? 0 : kind === 'weather' ? 1 : kind === 'tier0' ? 2 : kind === 'tier05' ? 3 : 4;
-  return prompts.sort((a, b) => priority(a.kind) - priority(b.kind)).slice(0, 6);
+  return prompts.slice(0, 5);
 }
 
 export const SCHOOL_OPTIONS = schools.map((school) => ({
@@ -333,3 +409,25 @@ export const SCHOOL_OPTIONS = schools.map((school) => ({
   lat: school.lat,
   lon: school.lon,
 }));
+
+/** The point we treat as "where you are": your school, never the device. */
+export function schoolLocation(schoolId?: string) {
+  return SCHOOL_OPTIONS.find((school) => school.id === schoolId) ?? null;
+}
+
+/** Upcoming calendar events for a school, soonest first, with days until each. */
+export function schoolEventsFor(
+  schoolId: string,
+  now = new Date(),
+  withinDays = 14,
+): Array<{ date: string; label: string; kind: SchoolEvent['kind']; daysAway: number }> {
+  const school = schools.find((item) => item.id === schoolId);
+  if (!school) return [];
+  return school.events
+    .map((event) => ({
+      ...event,
+      daysAway: daysBetween(now, new Date(`${event.date}T12:00:00`)),
+    }))
+    .filter((event) => event.daysAway >= 0 && event.daysAway <= withinDays)
+    .sort((a, b) => a.daysAway - b.daysAway);
+}

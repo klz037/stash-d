@@ -1,5 +1,11 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { ConditionType, LockState, MediaKind } from '@stashd/shared';
+import {
+  ConditionType,
+  LockContext,
+  LockState,
+  MAX_MOMENT_LENGTH,
+  MediaKind,
+} from '@stashd/shared';
 import { HydratedDocument } from 'mongoose';
 
 export type LockDocument = HydratedDocument<Lock>;
@@ -37,10 +43,19 @@ export class Lock {
   @Prop({ required: true, index: true })
   senderId: string;
 
-  @Prop({ required: true, index: true })
-  recipientId: string;
+  /**
+   * One id for a 1:1 lock, N for a group lock. The sender may appear here too
+   * (a self-stash, or "us"). Multikey index keeps the inbox query cheap.
+   */
+  @Prop({ type: [String], required: true, index: true })
+  recipientIds: string[];
 
-  @Prop({ required: true })
+  /**
+   * The note. Optional: a photo or a song alone is a fine stash. Mongoose
+   * treats '' as missing for a required string, which is what 500'd every
+   * note-less stash.
+   */
+  @Prop({ type: String, default: '' })
   text: string;
 
   @Prop()
@@ -66,6 +81,39 @@ export class Lock {
   @Prop({ type: String, default: null })
   conditionLabel: string | null;
 
+  /** The moment the sender tied this to, normalized free text ("getting coffee"), or null. */
+  @Prop({ type: String, default: null, maxlength: MAX_MOMENT_LENGTH })
+  context: LockContext | null;
+
+  /** Stamped when a recipient taps "I'm here" with a matching context. A timestamp, not a state. */
+  @Prop({ type: Date, default: null })
+  contextMetAt: Date | null;
+
+  @Prop({ type: String, default: null })
+  contextMetBy: string | null;
+
+  /** Sender asked for a second key. Confirm is refused unless the token carries the MFA claim. */
+  @Prop({ default: false })
+  requiresMfa: boolean;
+
+  /**
+   * Pair "open together" is a trade. The recipient's stash-back carries
+   * replyToId; the original carries replyId once it exists. They open as one.
+   */
+  @Prop({ type: String, default: null, index: true })
+  replyToId: string | null;
+
+  @Prop({ type: String, default: null })
+  replyId: string | null;
+
+  /** When the original sender started opening. The one-minute wait counts from here. */
+  @Prop({ type: Date, default: null })
+  openingStartedAt: Date | null;
+
+  /** The sender waited out the minute and their side opened without the recipient. */
+  @Prop({ default: false })
+  openedAlone: boolean;
+
   @Prop({
     required: true,
     enum: ['LOCKED', 'READY', 'UNLOCKED'],
@@ -73,11 +121,9 @@ export class Lock {
   })
   state: LockState;
 
-  @Prop({ default: false })
-  senderConfirmed: boolean;
-
-  @Prop({ default: false })
-  recipientConfirmed: boolean;
+  /** Users who have completed a hold. TOGETHER unlocks when this covers every participant. */
+  @Prop({ type: [String], default: [] })
+  confirmedIds: string[];
 
   @Prop({ type: Date, default: null })
   unlockedAt: Date | null;

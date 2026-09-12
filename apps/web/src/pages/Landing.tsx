@@ -6,14 +6,24 @@ import { apiUrl, isAuth0Configured } from '../lib/config';
 const previewLocked: LockDto = {
   id: 'preview-locked',
   senderId: 'maya',
-  recipientId: 'you',
+  recipientIds: ['you'],
+  recipients: [{ id: 'you', displayName: 'You' }],
+  participantIds: ['maya', 'you'],
+  confirmedIds: [],
   senderName: 'Maya',
   recipientName: 'You',
   conditionType: 'MANUAL',
   conditionLabel: 'Open when you land',
+  context: null,
+  contextMetAt: null,
+  contextMetBy: null,
+  contextMetByName: null,
+  requiresMfa: false,
+  replyToId: null,
+  replyId: null,
+  openingStartedAt: null,
+  openedAlone: false,
   state: 'LOCKED',
-  senderConfirmed: false,
-  recipientConfirmed: false,
   createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
   unlockedAt: null,
   mediaKind: 'TEXT',
@@ -24,6 +34,7 @@ const previewUnlocked: LockDto = {
   ...previewLocked,
   id: 'preview-open',
   state: 'UNLOCKED',
+  confirmedIds: ['you'],
   contentHidden: false,
   text: 'I left the porch light on. Call me when you see it.',
   unlockedAt: new Date().toISOString(),
@@ -67,12 +78,13 @@ export function Landing({
 
   return (
     <div className="pane" style={{ width: '100%' }}>
-      <button className="wordmark" type="button">
+      <h1 className="brand-big">
         stash<span>'d</span>
-      </button>
-      <p className="lede">
-        Long-distance, on purpose. You stash a lock — a note, a photo, a memory —
-        and your friend holds to open it when the time is right.
+      </h1>
+      <p className="lede intro">
+        For the friends you don't see enough. Leave them a note, a photo, or a
+        song they can't open yet. You pick when it opens: when they land, when
+        you're both holding, or whenever they decide. Until then it stays stash'd.
       </p>
       {!isAuth0Configured || !onLogin ? (
         <div className="code-block">
@@ -94,10 +106,10 @@ export function Landing({
           Sign in
         </button>
       )}
-      <p className="hint">{health}</p>
+      <p className="hint" style={{ textAlign: 'center' }}>{health}</p>
       {!isAuth0Configured ? (
         <div className="feed" style={{ marginTop: 22 }}>
-          <p className="lede">Hold the sealed lock. This preview stays on-device.</p>
+          <p className="lede">Try it. Press and hold the card.</p>
           <Polaroid
             lock={preview}
             viewerId="you"

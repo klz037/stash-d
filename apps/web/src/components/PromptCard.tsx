@@ -1,25 +1,25 @@
 import type { PromptDto } from '@stashd/shared';
 
-function kicker(prompt: PromptDto) {
-  if (prompt.kind === 'location') return 'near them';
-  if (prompt.kind === 'weather') return 'where they go to school';
-  if (prompt.kind === 'tier0') return 'from your shelf';
-  if (prompt.kind === 'tier05') return 'you wrote this down';
-  return 'on their calendar';
-}
-
 export function PromptCard({
   prompt,
   onStash,
   onDismiss,
 }: {
   prompt: PromptDto;
-  onStash?: (friendId?: string, suggestedCondition?: string) => void;
+  onStash?: (friendId?: string) => void;
   onDismiss: (triggerKey: string) => void;
 }) {
   return (
     <article className="prompt-card">
-      <div className="prompt-kicker">{kicker(prompt)}</div>
+      <div className="prompt-kicker">
+        {prompt.emotion === 'weather'
+          ? 'from their sky'
+          : prompt.kind === 'tier0'
+            ? 'from your shelf'
+            : prompt.kind === 'tier05'
+              ? 'you wrote this down'
+              : 'on their calendar'}
+      </div>
       <h3>{prompt.title}</h3>
       <p>{prompt.body}</p>
       {prompt.sourceUrl ? (
@@ -33,7 +33,7 @@ export function PromptCard({
         <button
           className="btn"
           type="button"
-          onClick={() => onStash?.(prompt.friendId, prompt.suggestedCondition)}
+          onClick={() => onStash?.(prompt.friendId)}
         >
           Stash for {prompt.friendName ?? 'them'}
         </button>

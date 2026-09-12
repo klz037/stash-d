@@ -14,25 +14,20 @@ export class UsersService {
   async getOrCreate(claims: AuthClaims): Promise<UserDocument> {
     const existing = await this.userModel.findById(claims.sub).exec();
     if (existing) {
+      // A name the user typed themselves wins over whatever Auth0 says.
+      const nextName = existing.displayNameSet
+        ? existing.displayName
+        : (claims.name ?? existing.displayName);
       const nextEmail = claims.email ?? existing.email;
       const nextPicture = claims.picture ?? existing.picture;
-      let dirty = false;
-      if (!existing.displayNameCustomized) {
-        const nextName = claims.name ?? existing.displayName;
-        if (existing.displayName !== nextName) {
-          existing.displayName = nextName;
-          dirty = true;
-        }
-      }
-      if (existing.email !== nextEmail) {
+      if (
+        existing.displayName !== nextName ||
+        existing.email !== nextEmail ||
+        existing.picture !== nextPicture
+      ) {
+        existing.displayName = nextName;
         existing.email = nextEmail;
-        dirty = true;
-      }
-      if (existing.picture !== nextPicture) {
         existing.picture = nextPicture;
-        dirty = true;
-      }
-      if (dirty) {
         await existing.save();
       }
       return existing;
@@ -51,18 +46,22 @@ export class UsersService {
     return this.userModel.findById(id).exec();
   }
 
+  async findMany(ids: string[]): Promise<UserDocument[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return this.userModel.find({ _id: { $in: ids } }).exec();
+  }
+
   async findByPairingCode(code: string): Promise<UserDocument | null> {
     return this.userModel.findOne({ pairingCode: code }).exec();
   }
 
   toDto(user: UserDocument): UserDto {
-    const locationFresh =
-      user.locationSharing &&
-      user.locationUpdatedAt &&
-      Date.now() - user.locationUpdatedAt.getTime() < 1000 * 60 * 45;
     return {
       id: user._id,
       displayName: user.displayName,
+      displayNameSet: Boolean(user.displayNameSet),
       pairingCode: user.pairingCode,
       pairingCodeDisplay: formatPairingCode(user.pairingCode),
       picture: user.picture,
@@ -71,12 +70,6 @@ export class UsersService {
       schoolName: user.schoolName,
       city: user.city,
       weeklyRitual: user.weeklyRitual,
-      locationSharing: user.locationSharing,
-      placeLabel: locationFresh ? user.placeLabel : undefined,
-      locationUpdatedAt:
-        locationFresh && user.locationUpdatedAt
-          ? user.locationUpdatedAt.toISOString()
-          : undefined,
       spotifyConnected: Boolean(user.spotify?.refreshToken),
       stashAlertsEnabled: Boolean(user.stashAlertsEnabled),
     };
@@ -90,54 +83,25 @@ export class UsersService {
       schoolName?: string;
       city?: string;
       weeklyRitual?: string;
-      locationSharing?: boolean;
       stashAlertsEnabled?: boolean;
     },
   ): Promise<UserDocument> {
-    if (patch.displayName !== undefined) {
-      const name = patch.displayName.trim().slice(0, 40);
-      if (name) {
-        user.displayName = name;
-        user.displayNameCustomized = true;
-      }
+    const name = patch.displayName?.trim();
+    if (name) {
+      user.displayName = name.slice(0, 40);
+      user.displayNameSet = true;
     }
     if (patch.schoolId !== undefined) user.schoolId = patch.schoolId || undefined;
     if (patch.schoolName !== undefined) user.schoolName = patch.schoolName || undefined;
     if (patch.city !== undefined) user.city = patch.city || undefined;
     if (patch.weeklyRitual !== undefined) user.weeklyRitual = patch.weeklyRitual || undefined;
-    if (patch.locationSharing !== undefined) {
-      user.locationSharing = patch.locationSharing;
-      if (!patch.locationSharing) {
-        user.placeLabel = undefined;
-        user.coarseLat = undefined;
-        user.coarseLon = undefined;
-        user.locationUpdatedAt = undefined;
-      }
-    }
-    if (patch.stashAlertsEnabled !== undefined) {
-      user.stashAlertsEnabled = patch.stashAlertsEnabled;
-    }
+    if (patch.stashAlertsEnabled !== undefined) user.stashAlertsEnabled = patch.stashAlertsEnabled;
     await user.save();
     return user;
   }
 
   async listAlertOptIns(): Promise<UserDocument[]> {
     return this.userModel.find({ stashAlertsEnabled: true }).exec();
-  }
-
-  async updateLocation(
-    user: UserDocument,
-    body: { coarseLat: number; coarseLon: number; placeLabel?: string },
-  ): Promise<UserDocument> {
-    if (!user.locationSharing) {
-      user.locationSharing = true;
-    }
-    user.coarseLat = body.coarseLat;
-    user.coarseLon = body.coarseLon;
-    user.placeLabel = body.placeLabel?.trim().slice(0, 40) || undefined;
-    user.locationUpdatedAt = new Date();
-    await user.save();
-    return user;
   }
 
   /** Finds the user an in-flight Spotify connect belongs to. */

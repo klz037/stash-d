@@ -5,6 +5,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from './auth/auth.module';
 import { UserSyncInterceptor } from './auth/user-sync.interceptor';
+import { CalendarModule } from './calendar/calendar.module';
 import { FriendshipsModule } from './friendships/friendships.module';
 import { GroupsModule } from './groups/groups.module';
 import { HealthModule } from './health/health.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     NotesModule,
     FriendshipsModule,
     GroupsModule,
+    CalendarModule,
     SpotifyModule,
     StashesModule,
     PromptsModule,

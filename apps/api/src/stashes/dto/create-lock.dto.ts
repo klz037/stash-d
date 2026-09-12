@@ -1,23 +1,24 @@
-import { ConditionType } from '@stashd/shared';
+import { ConditionType, LockContext, MAX_MOMENT_LENGTH, MAX_RECIPIENTS } from '@stashd/shared';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
   IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
-  ValidateIf,
 } from 'class-validator';
 
 export class CreateLockDto {
-  @ValidateIf((body: CreateLockDto) => !body.groupId)
-  @IsString()
-  @IsNotEmpty()
-  recipientId?: string;
-
-  @ValidateIf((body: CreateLockDto) => !body.recipientId)
-  @IsString()
-  @IsNotEmpty()
-  groupId?: string;
+  /** 'me' is accepted as an alias for the caller's own id. */
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_RECIPIENTS)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  recipientIds!: string[];
 
   @IsString()
   @MaxLength(2000)
@@ -35,6 +36,22 @@ export class CreateLockDto {
   @IsString()
   @MaxLength(280)
   conditionLabel?: string;
+
+  /** A moment in the sender's words. Normalized server-side. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_MOMENT_LENGTH)
+  context?: LockContext | null;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresMfa?: boolean;
+
+  /** Answering a TOGETHER lock. The server forces the type and the recipient. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  replyToId?: string;
 
   /**
    * A Spotify track id / URI / link. The server re-resolves it against Spotify

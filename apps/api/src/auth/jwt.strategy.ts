@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
+import { MFA_CLAIM } from '@stashd/shared';
 import { passportJwtSecret } from 'jwks-rsa';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { AuthClaims } from './auth.types';
@@ -27,12 +28,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  validate(payload: AuthClaims): AuthClaims {
+  validate(payload: AuthClaims & Record<string, unknown>): AuthClaims {
     return {
       sub: payload.sub,
       email: payload.email,
       name: payload.name ?? payload.nickname,
       picture: payload.picture,
+      // Only the signed token can say this. The Action sets it after MFA ran.
+      mfa: payload[MFA_CLAIM] === true,
     };
   }
 }

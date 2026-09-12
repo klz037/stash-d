@@ -6,12 +6,14 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { LockDto } from '@stashd/shared';
-import { CurrentUser } from '../auth/current-user.decorator';
+import { HereResponse, LockDto } from '@stashd/shared';
+import { AuthClaims } from '../auth/auth.types';
+import { CurrentClaims, CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { UserDocument } from '../users/schemas/user.schema';
 import { CreateLockDto } from './dto/create-lock.dto';
+import { HereDto } from './dto/here.dto';
 import { SetConditionDto } from './dto/set-condition.dto';
 import { StashesService } from './stashes.service';
 
@@ -39,28 +41,23 @@ export class StashesController {
   async create(
     @CurrentUser() user: UserDocument,
     @Body() body: CreateLockDto,
-  ): Promise<LockDto[]> {
-    const locks = await this.stashesService.create(user, body);
-    const result: LockDto[] = [];
-    for (const lock of locks) {
-      const dto = await this.stashesService.toDto(lock, user._id);
-      const recipientView = await this.stashesService.toDto(lock, lock.recipientId);
-      this.realtime.notifyLockCreated(lock.senderId, lock.recipientId, recipientView);
-      result.push(dto);
-    }
-    return result;
+  ): Promise<LockDto> {
+    const lock = await this.stashesService.create(user, body);
+    const views = await this.stashesService.toDtoForEveryone(lock);
+    this.realtime.notifyLockCreated(lock, views);
+    return views.get(user._id)!;
   }
 
   @Post(':id/confirm')
   async confirm(
     @CurrentUser() user: UserDocument,
+    @CurrentClaims() claims: AuthClaims,
     @Param('id') id: string,
   ): Promise<LockDto> {
-    const lock = await this.stashesService.confirm(user, id);
-    const forSender = await this.stashesService.toDto(lock, lock.senderId);
-    const forRecipient = await this.stashesService.toDto(lock, lock.recipientId);
-    this.realtime.notifyLockChange(lock, forSender, forRecipient);
-    return user._id === lock.senderId ? forSender : forRecipient;
+    const lock = await this.stashesService.confirm(user, id, claims);
+    const views = await this.stashesService.toDtoForEveryone(lock);
+    this.realtime.notifyLockChange(lock, views);
+    return views.get(user._id)!;
   }
 
   @Post(':id/condition')
@@ -74,8 +71,27 @@ export class StashesController {
       id,
       body.conditionLabel,
     );
-    const dto = await this.stashesService.toDto(lock, user._id);
-    this.realtime.notifyLockUpdated(lock.senderId, lock.recipientId, dto);
-    return dto;
+    const views = await this.stashesService.toDtoForEveryone(lock);
+    this.realtime.notifyLockUpdated(lock, views);
+    return views.get(user._id)!;
+  }
+
+  /**
+   * "I'm here." Every sealed lock addressed to the caller with a matching
+   * context gets stamped, and everyone on those locks is told over the socket.
+   */
+  @Post('here')
+  async here(
+    @CurrentUser() user: UserDocument,
+    @Body() body: HereDto,
+  ): Promise<HereResponse> {
+    const locks = await this.stashesService.markHere(user, body.context);
+    const matched: LockDto[] = [];
+    for (const lock of locks) {
+      const views = await this.stashesService.toDtoForEveryone(lock);
+      this.realtime.notifyLockUpdated(lock, views);
+      matched.push(views.get(user._id)!);
+    }
+    return { context: body.context, matched };
   }
 }

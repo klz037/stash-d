@@ -120,7 +120,7 @@ export function AlertPreview({
             : ' Add VAPID keys to the API to push these to a locked iPhone.'}
         </p>
 
-        <div className="prompt-actions">
+        <div className="preview-actions">
           <button className="btn" type="button" onClick={onSendReal} disabled={loading}>
             Send one for real
           </button>

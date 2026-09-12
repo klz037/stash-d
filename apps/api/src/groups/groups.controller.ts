@@ -4,8 +4,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { UserDocument } from '../users/schemas/user.schema';
-import { CreateGroupDto } from './dto/create-group.dto';
-import { JoinGroupDto } from './dto/join-group.dto';
+import { CreateGroupDto, JoinGroupDto } from './dto/group.dto';
 import { GroupsService } from './groups.service';
 
 @Controller('groups')
@@ -27,11 +26,7 @@ export class GroupsController {
     @Body() body: CreateGroupDto,
   ): Promise<GroupDto> {
     const group = await this.groupsService.create(user, body);
-    for (const memberId of group.memberIds) {
-      if (memberId !== user._id) {
-        this.realtime.notifyGroupUpdated(memberId, group);
-      }
-    }
+    this.realtime.notifyGroupUpdated(group);
     return group;
   }
 
@@ -41,11 +36,7 @@ export class GroupsController {
     @Body() body: JoinGroupDto,
   ): Promise<GroupDto> {
     const group = await this.groupsService.join(user, body.code);
-    for (const memberId of group.memberIds) {
-      if (memberId !== user._id) {
-        this.realtime.notifyGroupUpdated(memberId, group);
-      }
-    }
+    this.realtime.notifyGroupUpdated(group);
     return group;
   }
 }

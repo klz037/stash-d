@@ -43,12 +43,56 @@ The sender writes a condition in their own words. The recipient decides when it'
 Nothing enforces this. That's intentional. The lock isn't security, it's a ritual — the anticipation is the product. If someone opens it early, they've cheated themselves, not the system.
 
 **2. `TOGETHER` — "Open together"**
-Both people must hold to unlock. First one to hold moves the lock to `READY`. When the second holds, it opens on both screens at once.
+Between two people it is a trade, in a fixed order:
+
+1. A stashes to B. Nobody can hold yet.
+2. B stashes something back. The stash-back is its own lock, linked to A's (`replyToId`), and it never opens on its own.
+3. A holds to **start**. A's lock goes `READY`, B gets a notification with an "Open together" button, and a one-minute clock starts.
+4. B opens, from the notification or by holding the card. Both locks open in the same moment, on both screens.
+5. If B does nothing for a minute, B's stash-back opens for A anyway (`openedAlone`). A's lock stays `READY` for B, who is told "A opened it without you" and holds to look whenever they like.
+
+In a group (three or more people) there is no stash-back: every participant holds once, and the last hold opens it for everyone.
 
 **3. `RECIPIENT_SET` — "You decide"**
 The sender stashes content without a condition. The recipient writes the condition themselves, then unlocks whenever they decide it's been met.
 
 Note this means a lock can exist with a null condition, briefly. The engine has to handle that.
+
+---
+
+## Groups
+
+A lock has one sender and one to twelve recipients. A **group** is a named member list with an invite code, the same mechanism as pairing but N-way: anyone with the code can join from the profile menu. Being in a group with someone is permission to stash to them, exactly like being paired. Locks never reference a group; picking one in capture fills in the recipients. Recipients do not need to be paired with each other.
+
+Before sending, the sender sees each recipient's card: school, weather and local time, and the next two dates on that school's academic calendar. Then they confirm.
+
+| Type | With N recipients |
+|---|---|
+| `MANUAL` | Any one recipient's hold opens it, for everyone. State is global. |
+| `TOGETHER` | Sender plus every recipient holds. First hold → `READY`. Last hold → `UNLOCKED` on every screen at once. No quorum. |
+| `RECIPIENT_SET` | One recipient only. The API rejects more. |
+
+`confirmedIds` records who has held. The sender counts once even if they are also a recipient. A lock whose only participant is the sender is a self-stash and opens on one hold.
+
+## Context
+
+Not GPS. A sender can tie a `MANUAL` or `TOGETHER` lock to a **moment**: free text in their own words, normalized to lowercase ("getting coffee", "at the fence"). Four defaults are offered, plus every moment already used on any lock the sender can see, so a moment becomes an album across pairs and groups. The feed can be scoped to one moment.
+
+A recipient with sealed cards tied to a moment sees an "I'm here" row listing those moments. Tapping one stamps `contextMetAt` on every matching sealed lock addressed to them and tells everyone on those locks over the socket. Nothing changes state: the hold is still the unlock. Only the senders of matching locks learn where you are, which is the same stance as presence.
+
+The school in your profile stands in for your location for anything that needs a place (weather, calendar). The device's location is never read.
+
+## Sky
+
+Each friend's school gives us their **sky**: weather, local time, sunrise and sunset. That is the whole notification system. There is no push. When a friend's sky says something worth acting on, a prompt appears on your Stash and lands once as a toast:
+
+- It's raining, snowing or storming on them and not on you → "Take a picture of your sky and send it over."
+- A 20° gap between your campuses.
+- Their sunrise or sunset is within the hour.
+- It's late night for them and at least two hours off from you → "Stash something for when they wake up."
+- It's their morning and you're ahead of them.
+
+The same skies feed **condition suggestions** in capture: "Open when it stops raining" only appears if it is raining on the recipient right now. "Open when the sun comes up (7:12 AM)" carries their sunrise, not yours.
 
 ---
 
@@ -146,9 +190,9 @@ For a song, *all* of the track metadata is content — title, artist and album a
 
 Two presentations of one mechanism.
 
-Every user gets a **6-character code** (uppercase, unique) generated at first login. Entering someone's code links you to them. An **invite link** is the same code in a URL.
+Every user gets a **6-character code** (uppercase, unique) generated at first login. Entering someone's code sends them a **request**. An **invite link** is the same code in a URL.
 
-Both resolve to: create a friendship row between two user IDs.
+Both resolve to: a `PENDING` friendship row owned by the requester. The other person sees it as a sheet on their Stash and as a red dot on the ☰ menu, and accepts or declines. If they enter the requester's code back, that is the acceptance. Nothing can be stashed until it is `ACCEPTED`.
 
 No username search in the MVP. It's a different feature with its own privacy questions.
 
@@ -206,11 +250,10 @@ Every one of these starts by resolving the session and 401-ing if there isn't on
 - Auth0 login
 - Pairing by code and link
 - Self-stash
-- Text + one photo
-- Songs from Spotify: stash what you're listening to, album art is the reveal
+- Text + one photoStash
 - Three condition types
 - Hold to unlock
-- Together-unlock pushed over a live socket
+- Together-unlock with 1s polling
 - The Stash, Sent, Capture
 
 ## Explicitly out of scope

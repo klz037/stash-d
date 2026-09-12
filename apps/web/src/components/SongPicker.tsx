@@ -21,6 +21,7 @@ export function SongPicker({
   const [status, setStatus] = useState<SpotifyStatusDto | null>(null);
   const [current, setCurrent] = useState<SongDto | null>(null);
   const [recent, setRecent] = useState<SongDto[]>([]);
+  const [reason, setReason] = useState<string>();
   const [link, setLink] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -36,6 +37,7 @@ export function SongPicker({
         const playing = await api.spotifyNowPlaying(access);
         setCurrent(playing.current);
         setRecent(playing.recent);
+        setReason(playing.reason);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not reach Spotify.');
@@ -126,8 +128,14 @@ export function SongPicker({
         </>
       ) : null}
 
-      {status?.connected && !current && !loading ? (
-        <p className="hint">Nothing playing right now — here's what you just played.</p>
+      {status?.connected && !loading && reason ? (
+        <p className="error">{reason}</p>
+      ) : status?.connected && !current && !loading ? (
+        <p className="hint">
+          {recent.length > 0
+            ? "Nothing playing right now. Here's what you just played."
+            : 'Nothing playing and nothing recent on this account. Paste a link below.'}
+        </p>
       ) : null}
 
       {recent.length > 0 ? (

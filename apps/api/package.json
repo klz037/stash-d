@@ -8,6 +8,7 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "test": "jest",
+    "seed": "node scripts/seed.mjs",
     "lint": "tsc --noEmit -p tsconfig.build.json",
     "demo:alerts": "ts-node --transpile-only -P tsconfig.scripts.json scripts/demo-alerts.ts"
   },
@@ -44,7 +45,7 @@
     "@types/node": "22.13.14",
     "@types/passport-jwt": "4.0.1",
     "@types/web-push": "^3.6.4",
-    "dotenv": "^17.4.2",
+    "dotenv": "^17.2.3",
     "jest": "29.7.0",
     "mongodb-memory-server": "10.1.4",
     "ts-jest": "29.2.6",
