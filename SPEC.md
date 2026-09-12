@@ -56,18 +56,18 @@ Note this means a lock can exist with a null condition, briefly. The engine has 
 
 There are four. There is no nav bar.
 
-### The Stash (home)
-One vertical scroll of locks addressed to you, newest first. Each sealed polaroid shows:
+### The Shelf (home)
+One vertical scroll of locks addressed to you, newest first. Each sealed card shows:
 - who it's from
 - how long it's been sitting ("3 days ago")
 - the condition, in a handwriting font
 
 Nothing else. No tabs, no inbox/outbox toggle, no counts.
 
-**Empty state doubles as onboarding.** If your Stash is empty: "Nothing's waiting for you yet" plus your pairing code and an invite link, inline. This is the only place pairing lives.
+**Empty state doubles as onboarding.** If your shelf is empty: "Nothing's waiting for you yet" plus your pairing code and an invite link, inline. This is the only place pairing lives.
 
 ### Sent
-One horizontal swipe to the right from the Stash. Locks you've sent, with their current state. You rarely need it, so it doesn't get a tap.
+One horizontal swipe to the right from the Shelf. Locks you've sent, with their current state. You rarely need it, so it doesn't get a tap.
 
 ### Capture
 Persistent button at the bottom. Tapping it opens the camera directly, not a menu.
@@ -81,7 +81,7 @@ Not a separate route. It happens on the card, in place.
 
 ## Hold to unlock
 
-Press and hold the sealed polaroid for ~1.5 seconds. A ring traces around the polaroid as you hold. Release early and it snaps back. Hold to completion and it opens.
+Press and hold the sealed card for ~1.5 seconds. A ring traces around the seal as you hold. Release early and it snaps back. Hold to completion and it opens.
 
 For `TOGETHER` locks, completing your hold fills your ring and leaves the other person's empty. The card does not poll — it holds an authenticated Socket.IO connection and the server pushes the change. When their hold lands, both rings complete and the content opens simultaneously on both screens.
 
@@ -98,7 +98,7 @@ A picks recipient + condition
    ↓
 Backend stores lock as LOCKED
    ↓
-B logs in, sees a sealed polaroid on their Stash
+B logs in, sees a sealed card on their shelf
    ↓
 B holds to unlock
    ↓
@@ -189,7 +189,7 @@ Lock
 ## Endpoints
 
 ```
-GET    /api/locks              Stash — locks where I'm recipient
+GET    /api/locks              shelf — locks where I'm recipient
 GET    /api/locks/sent         locks where I'm sender
 POST   /api/locks              create
 POST   /api/locks/:id/confirm  hold-to-unlock completed
@@ -207,11 +207,14 @@ Every one of these starts by resolving the session and 401-ing if there isn't on
 - Pairing by code and link
 - Self-stash
 - Text + one photo
+<<<<<<< HEAD
 - Songs from Spotify: stash what you're listening to, album art is the reveal
+=======
+>>>>>>> 8dfae12 (Revert "updated spec for polaroids/stash")
 - Three condition types
 - Hold to unlock
-- Together-unlock pushed over a live socket
-- The Stash, Sent, Capture
+- Together-unlock with 1s polling
+- The Shelf, Sent, Capture
 
 ## Explicitly out of scope
 
@@ -230,7 +233,7 @@ Cut these now, add back only if you're ahead at hour 20.
 
 - **Max width ~420px, centered.** Build at phone width from the first commit. We present in a phone frame.
 - **No emoji in UI chrome.** Personality lives in the condition text, not the frame.
-- **One accent color**, used only on the polaroid.
+- **One accent color**, used only on the seal.
 - Handwriting font for condition text only. Everything else is the UI sans.
 
 ---
